@@ -1,0 +1,349 @@
+---
+title: "Cleaning Datasets"
+author: "Matthew Ross"
+date: "2024-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+```
+
+# Preqin Data
+```{r}
+
+d <- read_excel("/Users/mross/Downloads/Preqin_redeals_restructured_export-14_Oct_24d3b0344b-018a-411e-b123-54e16ddbbdcc.xlsx")
+
+d <- data.frame(d)
+
+# Step 1: Define the columns to check for NA values and remove rows with NA in those columns
+columns_to_check <- c(
+  "DEAL.NAME", "DEAL.DATE", "DEAL.TYPE", "PRIMARY.LOCATION", "PRIMARY.ASSET.TYPE", 
+  "DEAL.OVERVIEW", "INVESTORS...BUYERS..FIRMS.", "BOUGHT.FROM...SELLERS..FIRMS.", 
+  "ASSET.REGIONS", "ASSET.COUNTRIES", "ASSET.STATES", 
+  "ASSET.CITIES", "ASSETS.TYPES", "ASSETS", "BUYER.TYPE", "SELLER.TYPE"
+)
+
+# Step 2: Omit rows with NA in the specified columns
+d_cleaned <- d[complete.cases(d[, columns_to_check]), ]
+
+# Step 3: Add back the specified columns
+columns_to_add_back <- c("DEAL.SIZE..USD.MN.", "NO..OF.ASSETS", "TOTAL.SIZE..SQ..FT..")
+
+# Add these columns to the cleaned dataset
+d_final <- d_cleaned[, c(columns_to_check, columns_to_add_back)]
+
+# Step 4: Clean up the column names
+clean_colnames <- function(col_names) {
+  col_names <- gsub("\\.+", " ", col_names)  # Replace multiple dots with spaces
+  col_names <- gsub("\\.$", "", col_names)   # Remove trailing dots
+  col_names <- str_to_title(col_names)       # Convert to title case
+  return(col_names)
+}
+
+
+colnames(d_final) <- clean_colnames(colnames(d_final))
+
+
+ca = d_final[d_final$`Asset States` == "CA", ]
+unique(ca$`Asset Cities`)
+
+# keep only first location for each deal
+ca$`Asset Cities` <- gsub(",.*", "", ca$`Asset Cities`)
+unique(ca$`Asset Cities`)
+ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
+
+
+```
+
+# BLS Data
+```{r}
+bls <- read_excel("/Users/mross/Downloads/ssamatab1 2.xlsx")
+
+# set colnames to be row three values
+colnames(bls) <- bls[2, ]
+# remove first three rows
+bls <- bls[-c(1:3), ]
+
+bls <- bls[bls$`ST FIPS Code` == "06", ]
+
+bls$Area <- gsub(",.*", "", bls$Area)
+unique(bls$Area)
+
+bls <- bls %>% 
+  separate_rows(Area, sep = "-{1,2}") %>%
+  mutate(Area = trimws(Area))
+
+unique(bls$Area)
+bls <- bls[!is.na(bls$Area), ]
+
+bls$Date <- as.Date(paste(bls$Year, bls$Month, "01", sep="-"), format = "%Y-%m-%d")
+
+bls <- bls %>%
+  select(Area, 'Civilian Labor Force', Employment, Unemployment, 'Unemployment Rate', Date)
+```
+# Fed Interest Rates
+```{r}
+fed <- read_excel("/Users/mross/Downloads/FEDFUNDS.xls")
+fed <- fed[-c(1:10), ]
+colnames(fed) <- c("Date", "Rate")
+fed <- fed %>%
+  mutate(
+    Date = as.Date(as.numeric(Date), origin = "1899-12-30"),
+    Rate = as.numeric(Rate)
+  )
+
+head(fed)
+```
+# Zillow Data
+```{r}
+library(lubridate)
+
+z_home_value <- read.csv("/Users/mross/Downloads/Zip_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv")
+z_home_value <- z_home_value[z_home_value$State == "CA", ]
+z_home_value <- z_home_value %>%
+  select(-c(RegionID, SizeRank, RegionName, RegionType, StateName, State, Metro))
+names(z_home_value) <- names(z_home_value) %>%
+  sub("^X", "", .) %>%       # Remove leading 'X'
+  gsub("\\.", "-", .) 
+head(z_home_value)
+date_columns <- setdiff(names(z_home_value), c("City", "CountyName"))
+date_columns_after_2010 <- date_columns[as.Date(date_columns) >= as.Date("2010-01-01")]
+z_home_value <- z_home_value %>%
+  select(City, CountyName, all_of(date_columns_after_2010)) %>%
+  pivot_longer(cols = -c(City, CountyName), names_to = "Date", values_to = "HomeValue")
+
+# change date formulation to first day of next month, not end of month
+z_home_value$Date <- as.Date(z_home_value$Date)
+z_home_value$Date <- ceiling_date(z_home_value$Date, unit = "month")
+head(z_home_value)
+
+##########################################
+
+z_rent_index <- read.csv("/Users/mross/Downloads/Zip_zori_uc_sfrcondomfr_sm_month.csv")
+z_rent_index <- z_rent_index[z_rent_index$State == "CA", ]
+z_rent_index <- z_rent_index %>%
+  select(-c(RegionID, SizeRank, RegionName, RegionType, StateName, State, Metro))
+names(z_rent_index) <- names(z_rent_index) %>%
+  sub("^X", "", .) %>%       # Remove leading 'X'
+  gsub("\\.", "-", .) 
+# too many missing data points - might scrap this
+
+z_for_sale <- read.csv("/Users/mross/Downloads/Metro_invt_fs_uc_sfrcondo_sm_month.csv")
+z_for_sale <- z_for_sale[z_for_sale$State == "CA", ]
+head(z_for_sale)
+
+# doesn't have data until 2018
+
+z_market_temp <- read.csv("/Users/mross/Downloads/Metro_market_temp_index_uc_sfrcondo_month.csv")
+head(z_market_temp)
+# doesn't have data until 2018
+
+z_market_temp <- z_market_temp[z_market_temp$State == "CA", ]
+
+z_new_construction <- read.csv("/Users/mross/Downloads/Metro_new_con_sales_count_raw_uc_sfrcondo_month.csv")
+head(z_new_construction)
+
+z_new_construction <- z_new_construction[z_new_construction$StateName == "CA", ]
+# doesn't have data until 2018
+```
+
+# ACS Data
+```{r}
+library(dplyr)
+
+# Specify the folder path
+folder_path <- "/Users/mross/Downloads/ACSData_ByCity"
+
+# List all CSV files in the folder that contain "Data" in their name
+csv_files <- list.files(path = folder_path, pattern = "Data.*\\.csv$", full.names = TRUE)
+
+# Function to extract the year from the filename
+extract_year <- function(filename) {
+  year <- sub(".*ACSDP1Y(20\\d{2}).*", "\\1", filename)
+  return(as.numeric(year))
+}
+
+# Read and bind the data
+acs <- do.call(rbind, lapply(csv_files, function(file) {
+  data <- read.csv(file)
+  data$Year <- extract_year(file)
+  return(data)
+}))
+acs[1,552] <- "Year"
+colnames(acs) <- acs[1,]
+
+
+acs <- acs[!is.na(as.numeric(as.character(acs$`Estimate!!EMPLOYMENT STATUS!!Population 16 years and over`))), ]
+acs <- acs[, !duplicated(colnames(acs))]
+
+columns_to_keep <- (colnames(acs) == "Year") | 
+                   (grepl("^(Estimate!!|Percent!!)", colnames(acs)) & 
+                    !grepl("Margin of Error", colnames(acs))) | (colnames(acs) == "Geographic Area Name")
+
+# Subset the dataframe to keep only the desired columns
+acs_selected <- acs[, columns_to_keep]
+
+# Modify the column names as per your requirement
+
+# Step 1: Remove substrings enclosed by "!!...!!" and replace them with a space
+colnames(acs_selected) <- gsub("!![^!]*!!", " ", colnames(acs_selected))
+
+# Step 2: Replace multiple spaces with a single space
+colnames(acs_selected) <- gsub("\\s+", " ", colnames(acs_selected))
+
+# Step 3: Trim leading and trailing whitespace from the column names
+colnames(acs_selected) <- trimws(colnames(acs_selected))
+
+acs <- acs_selected
+
+acs$`Geographic Area Name` <- gsub("city,.*", "", acs$`Geographic Area Name`)
+acs$`Geographic Area Name` <- gsub("CDP.*", "", acs$`Geographic Area Name`)
+acs$`Geographic Area Name` <- gsub("town.*", "", acs$`Geographic Area Name`)
+head(acs)
+```
+
+# Opportunity Zone Data
+```{r}
+library(tigris)
+library(tidycensus)
+library(sf)
+opp <- read.csv("/Users/mross/Downloads/Opportunity_Zones_-5617125383102974896.csv")
+opp <- opp[opp$STUSAB == "CA", ]
+
+
+opp_sf <- st_read("/Users/mross/Downloads/Opportunity_Zones_6143711553447977475/Opportunity_Zones.shp")
+
+# Load California places (city boundaries) as sf object
+ca_places <- places(state = "CA", cb = TRUE, year = 2020) %>%
+  select(NAME, GEOID)  # Selecting only the relevant columns (city name and FIPS code)
+
+# Ensure both layers (opp_sf and ca_places) are in the same CRS
+opp_sf <- st_transform(opp_sf, crs = st_crs(ca_places))
+
+# Step 4: Find the Nearest City for Each Opportunity Zone Tract
+nearest_cities <- st_nearest_feature(opp_sf, ca_places)
+
+# Add the nearest city name and GEOID to the Opportunity Zones data
+opp_with_towns <- opp_sf %>%
+  mutate(
+    Nearest_City = ca_places$NAME[nearest_cities],
+    City_GEOID = ca_places$GEOID[nearest_cities]
+  )
+
+# View the updated data with nearest city names
+head(opp_with_towns)
+
+opp = st_drop_geometry(opp_with_towns)
+opp = opp[opp$STUSAB == "CA",]
+
+## Contains census tracts that are "opportunity zones" as of 2019, don't have change over time. Maybe include indicator variable?
+
+opportunity_cities = opp %>%
+  select(Nearest_City) %>%
+  distinct()
+```
+
+# Merging Predictors
+```{r}
+library(tidygeocoder)
+library(geosphere)
+library(dplyr)
+library(pbapply)
+df <- NULL
+df$Town <- unique(acs$`Geographic Area Name`)
+df$Town <- trimws(df$Town)
+
+months <- seq(as.Date("2010-12-01"), as.Date("2023-06-01"), by = "month")
+df <- expand.grid(Town = df$Town, Date = months)
+head(df)
+
+df <- df %>%
+  left_join(fed, by = "Date") %>%
+  left_join(bls, by = c("Town" = "Area", "Date" = "Date"))
+
+df <- df %>%
+  mutate(Town = paste(Town, "CA", sep = ", "))
+
+bls <- bls %>%
+  mutate(Area = gsub(",.*", "", Area)) %>%
+  mutate(Area = paste(Area, "CA", sep = ", "))
+
+# still a lot of missing towns here, lets assign values based on the nearest town in the bls data
+# df_geo <- df %>%
+#   distinct(Town) %>%
+#   geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+# 
+# bls_geo <- bls %>%
+#   distinct(Area) %>%
+#   geocode(address = Area, method = "osm", lat = latitude, long = longitude)
+
+distance_results <- expand.grid(df_geo$Town, bls_geo$Area) %>%
+  rename(Town = Var1, Area = Var2) %>%
+  left_join(df_geo, by = "Town") %>%
+  left_join(bls_geo, by = "Area", suffix = c("_df", "_bls")) %>%
+  mutate(distance = distHaversine(cbind(longitude_df, latitude_df), cbind(longitude_bls, latitude_bls)))
+
+nearest_matches <- distance_results %>%
+  group_by(Town) %>%
+  slice_min(order_by = distance, n = 1) %>%
+  ungroup() %>%
+  select(Town, Area)
+
+# View the matches
+df <- df %>%
+  left_join(nearest_matches, by = "Town") %>%  # Join the nearest matched Area
+  left_join(bls, by = c("Area" = "Area", "Date" = "Date")) # Bring in BLS data for the matched area
+
+df <- df %>%
+  select(Town, Date, Rate, `Civilian Labor Force.y`, Employment.y, Unemployment.y, `Unemployment Rate.y`) %>%
+  rename(
+    Fed_Rate = Rate,
+    Labor_Force = `Civilian Labor Force.y`,
+    Employment = Employment.y,
+    Unemployment = Unemployment.y,
+    Unemployment_Rate = `Unemployment Rate.y`
+  ) %>%
+  mutate(Town = gsub(",.*", "", Town))
+
+z_home_value_unique <- z_home_value %>%
+  group_by(City, Date) %>%
+  summarize(HomeValue = mean(HomeValue, na.rm = TRUE), .groups = "drop")
+
+# Now perform the left join
+df <- df %>%
+  left_join(z_home_value_unique, by = c("Town" = "City", "Date" = "Date"))
+#count number of NA's in HomeValue for df
+
+# add in ACS data
+# get rid of columns where every value is "(X)"
+acs <- acs[, !apply(acs == "(X)", 2, all)]
+# keep only columns with "Estimate in the name"
+acs <- acs[, c("Geographic Area Name", "Year",grep("Estimate", colnames(acs), value = TRUE))]
+acs <- acs %>%
+  mutate(`Geographic Area Name` = trimws(`Geographic Area Name`))
+
+str(acs)
+# get ready to merge
+df <- df %>%
+  mutate(Town = trimws(Town),
+    Date_Year = as.character(format(Date, "%Y"))) %>%
+  left_join(acs, by = c("Town" = "Geographic Area Name", "Date_Year" = "Year"))
+
+df <- df[df$Town != "California", ]
+
+# add in opportunity zone data
+df <- df %>%
+  mutate(Opportunity_Zone = ifelse(Town %in% opportunity_cities$Nearest_City, 1, 0))
+
+
+```
+
