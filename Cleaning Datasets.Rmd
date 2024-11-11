@@ -277,14 +277,14 @@ bls <- bls %>%
   mutate(Area = gsub(",.*", "", Area)) %>%
   mutate(Area = paste(Area, "CA", sep = ", "))
 
-# still a lot of missing towns here, lets assign values based on the nearest town in the bls data
-# df_geo <- df %>%
-#   distinct(Town) %>%
-#   geocode(address = Town, method = "osm", lat = latitude, long = longitude)
-# 
-# bls_geo <- bls %>%
-#   distinct(Area) %>%
-#   geocode(address = Area, method = "osm", lat = latitude, long = longitude)
+#still a lot of missing towns here, lets assign values based on the nearest town in the bls data
+df_geo <- df %>%
+  distinct(Town) %>%
+  geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+
+bls_geo <- bls %>%
+  distinct(Area) %>%
+  geocode(address = Area, method = "osm", lat = latitude, long = longitude)
 
 distance_results <- expand.grid(df_geo$Town, bls_geo$Area) %>%
   rename(Town = Var1, Area = Var2) %>%
@@ -331,7 +331,6 @@ acs <- acs[, c("Geographic Area Name", "Year",grep("Estimate", colnames(acs), va
 acs <- acs %>%
   mutate(`Geographic Area Name` = trimws(`Geographic Area Name`))
 
-str(acs)
 # get ready to merge
 df <- df %>%
   mutate(Town = trimws(Town),
@@ -344,6 +343,52 @@ df <- df[df$Town != "California", ]
 df <- df %>%
   mutate(Opportunity_Zone = ifelse(Town %in% opportunity_cities$Nearest_City, 1, 0))
 
-
+max(df$Date)
 ```
+
+```{r}
+# Step 1: Get distinct towns and asset cities with their coordinates
+df_geo <- df %>%
+  distinct(Town) %>%
+  geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+
+ca_geo <- ca %>%
+  distinct(`Asset Cities`) %>%
+  geocode(address = `Asset Cities`, method = "osm", lat = latitude, long = longitude)
+
+# Step 2: Calculate distances between each Town in df and each Asset City in ca
+distance_results <- expand.grid(df_geo$Town, ca_geo$`Asset Cities`) %>%
+  rename(Town = Var1, `Asset Cities` = Var2) %>%
+  left_join(df_geo, by = "Town") %>%
+  left_join(ca_geo, by = c("Asset Cities" = "Asset Cities"), suffix = c("_df", "_ca")) %>%
+  mutate(distance = distHaversine(cbind(longitude_df, latitude_df), cbind(longitude_ca, latitude_ca)))
+
+# Step 3: Find the nearest Town for each Asset City
+nearest_matches <- distance_results %>%
+  group_by(`Asset Cities`) %>%
+  slice_min(order_by = distance, n = 1) %>%
+  ungroup() %>%
+  select(Town, `Asset Cities`)
+
+# Step 4: Add nearest matches to the ca dataset
+ca <- ca %>%
+  left_join(nearest_matches, by = "Asset Cities")
+
+df <- df %>%
+  mutate(Year_Month = format(as.Date(Date), "%Y-%m")) %>%  # Convert Date to Date format, then extract year-month
+  mutate(Year_Month = as.character(Year_Month))            # Ensure Year_Month is a character
+
+ca <- ca %>%
+  mutate(Year_Month = format(as.Date(`Deal Date`), "%Y-%m")) %>%  # Convert Deal Date to Date format, then extract year-month
+  mutate(Year_Month = as.character(Year_Month))    
+
+#choose dates between 2010 and june 2023
+ca <- ca %>%
+  filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2023-06-01")
+# Step 5: Merge ca and df on Town and Date
+merged_data <- ca %>%
+  left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
+
+md <- merged_data
+```   
 
