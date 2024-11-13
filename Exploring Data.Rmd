@@ -1,0 +1,71 @@
+---
+title: "Exploring Data"
+author: "Matthew Ross"
+date: "2024-11-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+```
+
+```{r}
+# load csv
+df <- read.csv("merged.csv")
+
+dim(df)
+
+df <- df %>%
+  select(-c("Deal.Name", "Deal.Date", "Primary.Location", "Deal.Overview", "Asset.Regions", "Asset.Countries", "Asset.States", "Date", "X"))
+#check distribution of date with histogram
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Plot histogram for distribution over time based on Year_Month
+ggplot(df, aes(x = Year_Month)) +
+  geom_bar(fill = "blue", color = "black") +
+  labs(title = "Distribution of Deals Over Time", x = "Year_Month", y = "Count of Deals") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+head(df)
+# Assuming the township column is 'Primary Location' or similar, adjust if necessary
+ggplot(df, aes(x = Town)) +
+  geom_bar(fill = "green", color = "black") +
+  labs(title = "Distribution of Deals Across Townships", x = "Township", y = "Count of Deals") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+top_towns <- df %>%
+  count(Town) %>%
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>%
+  pull(Town)
+
+df_top <- df %>%
+  filter(Town %in% top_towns)
+
+# Plot using facets for each town
+ggplot(df_top, aes(x = Year_Month)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  facet_wrap(~ Town, scales = "free_y") +
+  labs(title = "Distribution of Deals Over Time for Top 10 Towns",
+       x = "Year-Month", y = "Deal Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+

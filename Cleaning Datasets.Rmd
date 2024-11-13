@@ -343,17 +343,21 @@ df <- df[df$Town != "California", ]
 df <- df %>%
   mutate(Opportunity_Zone = ifelse(Town %in% opportunity_cities$Nearest_City, 1, 0))
 
-max(df$Date)
 ```
 
 ```{r}
 # Step 1: Get distinct towns and asset cities with their coordinates
+
 df_geo <- df %>%
   distinct(Town) %>%
+  mutate(Town = paste(Town, "California", sep = ", ")) %>%
   geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+
+ca[ca$`Asset Cities` == "Mountainview", "Asset Cities"] <- "Mountain View"
 
 ca_geo <- ca %>%
   distinct(`Asset Cities`) %>%
+  mutate(`Asset Cities` = paste(`Asset Cities`, "California", sep = ", ")) %>%
   geocode(address = `Asset Cities`, method = "osm", lat = latitude, long = longitude)
 
 # Step 2: Calculate distances between each Town in df and each Asset City in ca
@@ -368,7 +372,7 @@ nearest_matches <- distance_results %>%
   group_by(`Asset Cities`) %>%
   slice_min(order_by = distance, n = 1) %>%
   ungroup() %>%
-  select(Town, `Asset Cities`)
+  select(Town, `Asset Cities`, distance)
 
 # Step 4: Add nearest matches to the ca dataset
 ca <- ca %>%
@@ -390,5 +394,14 @@ merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
 
 md <- merged_data
-```   
 
+# save as csv
+# write.csv(md, "merged.csv")
+
+nearest_matches %>% arrange(desc(distance))
+
+
+ca
+ca %>% filter(`Asset Cities` == "Needles") %>% count()
+
+``` 
