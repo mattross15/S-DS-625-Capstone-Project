@@ -400,8 +400,4 @@ md <- merged_data
 
 nearest_matches %>% arrange(desc(distance))
 
-
-ca
-ca %>% filter(`Asset Cities` == "Needles") %>% count()
-
 ``` 
