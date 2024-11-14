@@ -347,7 +347,6 @@ df <- df %>%
 
 ```{r}
 # Step 1: Get distinct towns and asset cities with their coordinates
-
 df_geo <- df %>%
   distinct(Town) %>%
   mutate(Town = paste(Town, "California", sep = ", ")) %>%
@@ -367,37 +366,41 @@ distance_results <- expand.grid(df_geo$Town, ca_geo$`Asset Cities`) %>%
   left_join(ca_geo, by = c("Asset Cities" = "Asset Cities"), suffix = c("_df", "_ca")) %>%
   mutate(distance = distHaversine(cbind(longitude_df, latitude_df), cbind(longitude_ca, latitude_ca)))
 
-# Step 3: Find the nearest Town for each Asset City
+# Step 3: Find the nearest Town for each Asset City, and filter by distance <= 50,000
 nearest_matches <- distance_results %>%
   group_by(`Asset Cities`) %>%
   slice_min(order_by = distance, n = 1) %>%
   ungroup() %>%
+  filter(distance <= 100000) %>%  # Filter to only keep rows with distance <= 50000
   select(Town, `Asset Cities`, distance)
+
+nearest_matches %>% arrange(desc(distance))
 
 # Step 4: Add nearest matches to the ca dataset
 ca <- ca %>%
   left_join(nearest_matches, by = "Asset Cities")
 
+# Step 5: Extract the Year-Month from the Date column in both ca and df
 df <- df %>%
-  mutate(Year_Month = format(as.Date(Date), "%Y-%m")) %>%  # Convert Date to Date format, then extract year-month
-  mutate(Year_Month = as.character(Year_Month))            # Ensure Year_Month is a character
+  mutate(Year_Month = format(as.Date(Date), "%Y-%m"))
 
 ca <- ca %>%
-  mutate(Year_Month = format(as.Date(`Deal Date`), "%Y-%m")) %>%  # Convert Deal Date to Date format, then extract year-month
-  mutate(Year_Month = as.character(Year_Month))    
+  mutate(Year_Month = format(as.Date(`Deal Date`), "%Y-%m"))
 
-#choose dates between 2010 and june 2023
+# Filter ca for dates between 2010 and June 2023
 ca <- ca %>%
   filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2023-06-01")
-# Step 5: Merge ca and df on Town and Date
+
+# Step 6: Merge ca and df on Town and Year_Month
 merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
 
-md <- merged_data
+# View the merged data
+head(merged_data)
 
-# save as csv
-# write.csv(md, "merged.csv")
+dim(merged_data)
 
-nearest_matches %>% arrange(desc(distance))
+# Optional: Save as CSV
+write.csv(merged_data, "merged_final.csv")
 
 ``` 
