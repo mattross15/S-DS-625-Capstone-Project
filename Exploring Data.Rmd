@@ -16,6 +16,13 @@ library(stringr)
 library(dplyr)
 library(tidyverse)
 library(tidyr)
+library(gganimate)
+library(leaflet)
+library(htmlwidgets)
+library(viridis)
+library(htmlwidgets)
+library(webshot2)
+library(magick)
 ```
 
 ```{r}
@@ -282,11 +289,101 @@ print(df)
 plan(sequential)
 ```
 
+First fix rows that failed the sanity check - most are because they are located within large townships whose center location is far from the actual - fixed the ones that actually were gettign the wrong address - only 95 total mismatches
+
+
 
 ```{r}
 df <- readRDS("df_geocoded_clean.rds")
+df <- data.frame(df)
 
-head(df)
+# Extract rows that failed the sanity check
+e <- df %>%
+  filter(sanity_check == "Fail") %>%
+  select(Asset.Cities, Address, longitude, latitude, long_center, lat_center, distance, sanity_check) %>%
+  arrange(desc(distance))
+
+# Load the corrected data
+e_fixed <- read_csv("geocoding_failures_fixed.csv") %>%
+  select(-c("...5"))  # Remove the unnecessary column
+
+# Set specified columns to NA for rows where sanity_check == "Fail"
+cols_to_update <- c("longitude", "latitude", "long_center", "lat_center", "distance")
+df <- df %>%
+  mutate(across(all_of(cols_to_update), ~ ifelse(sanity_check == "Fail", NA, .)))
+
+# Replace NA values in the specified columns with corrected data from e_fixed
+df <- df %>%
+  left_join(e_fixed, by = "Address", suffix = c("", ".fixed")) %>%
+  mutate(
+    longitude = coalesce(longitude.fixed, longitude),
+    latitude = coalesce(latitude.fixed, latitude),
+    long_center = coalesce(long_center.fixed, long_center),
+    lat_center = coalesce(lat_center.fixed, lat_center),
+    distance = coalesce(distance.fixed, distance)
+  ) %>%
+  select(-ends_with(".fixed"))
+
+df <- df %>%
+  mutate(sanity_check = ifelse(sanity_check == "Fail", "Pass", sanity_check))
+
+
+# Filter data for Los Angeles
+# Filter data for Los Angeles and arrange by time
+la_data <- df %>%
+  filter(Town == "Los Angeles") %>%
+  arrange(Year_Month) %>%
+  mutate(Year = as.numeric(substr(Year_Month, 1, 4)))  # Extract year from Year_Month
+
+# Define a color palette based on the Year
+year_colors <- colorFactor(palette = "viridis", domain = la_data$Year)
+
+# Directory to save individual map snapshots
+output_dir <- "leaflet_frames"
+dir.create(output_dir, showWarnings = FALSE)
+
+# Generate Leaflet maps for each Year_Month and save snapshots
+unique_dates <- unique(la_data$Year_Month)
+for (i in seq_along(unique_dates)) {
+  current_date <- unique_dates[i]
+  current_data <- la_data %>% filter(Year_Month <= current_date)
+  
+  # Create Leaflet map
+  m <- leaflet(current_data) %>%
+    addTiles() %>%
+    addCircleMarkers(
+      ~longitude,
+      ~latitude,
+      color = ~year_colors(Year),
+      radius = 5,
+      fillOpacity = 0.8,
+      popup = ~paste0(
+        "<b>Deal Type:</b> ", Deal.Type, "<br>",
+        "<b>Deal Size (USD Mn):</b> ", Deal.Size.Usd.Mn., "<br>",
+        "<b>Date:</b> ", Year_Month
+      )
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = year_colors,
+      values = ~Year,
+      title = "Year"
+    )
+  
+  # Save the map as an HTML widget and capture a PNG
+  map_file <- file.path(output_dir, paste0("frame_", sprintf("%03d", i), ".html"))
+  png_file <- file.path(output_dir, paste0("frame_", sprintf("%03d", i), ".png"))
+  
+  saveWidget(m, file = map_file, selfcontained = TRUE)
+  webshot(map_file, file = png_file, cliprect = "viewport")
+}
+
+# Combine PNGs into a GIF
+png_files <- list.files(output_dir, pattern = "*.png", full.names = TRUE)
+gif <- image_read(png_files)
+gif <- image_animate(gif, fps = 5)  # Adjust FPS for animation speed
+image_write(gif, "los_angeles_deals.gif")
+
 ```
 
 
