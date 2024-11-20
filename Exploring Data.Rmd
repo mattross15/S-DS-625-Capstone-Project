@@ -179,121 +179,74 @@ df$Address <- str_extract(df$Assets, "^[^,]+")
 
 df$Address = paste0(df$Address, ", ", df$Asset.Cities, ", California")
 ```
-Get logitude and latitude for each address
-```{r}
-library(ggmap)
-library(tidyverse)
-library(furrr)
-library(geosphere)
-
-# # Set up parallel processing
-# plan(multisession, workers = parallel::detectCores() - 1)
-# 
-# # Function to geocode a single location (address or city)
-# geocode_single <- function(location) {
-#   tryCatch({
-#     result <- geo(address = location, method = "osm", full_results = FALSE)
-#     if (nrow(result) > 0) {
-#       result <- result[1, ]  # Take the first result if multiple
-#     }
-#     tibble(latitude = result$lat, longitude = result$long)
-#   }, error = function(e) {
-#     tibble(latitude = NA_real_, longitude = NA_real_)
-#   })
-# }
-# 
-# # Step 1: Geocode unique cities from df$Asset.Cities
-# city_coords <- df %>%
-#   distinct(Asset.Cities) %>%
-#   rename(city = Asset.Cities) %>%
-#   mutate(geocode_results = future_map(city, geocode_single, .progress = TRUE)) %>%
-#   unnest_wider(geocode_results) %>%
-#   rename(lat_center = latitude, long_center = longitude)
-# 
-# # Step 2: Geocode addresses from df$Address with parallel processing
-# df <- df %>%
-#   mutate(geocode_results = future_map(Address, geocode_single, .progress = TRUE)) %>%
-#   unnest_wider(geocode_results) %>%
-#   rename(latitude = latitude, longitude = longitude)
-# 
-# # Step 3: Join city coordinates back to the main dataframe
-# df <- df %>%
-#   left_join(city_coords, by = c("Asset.Cities" = "city"))
-# 
-# # Step 4: Calculate haversine distance and flag outliers
-# df <- df %>%
-#   mutate(
-#     distance = distHaversine(cbind(longitude, latitude), cbind(long_center, lat_center)),
-#     longitude = if_else(distance > 50000, NA_real_, longitude),  # 50 km threshold
-#     latitude = if_else(distance > 50000, NA_real_, latitude)
-#   )
-# 
-# # View results
-# print(df)
-
-# saveRDS(df, "df_geocoded.rds")
-# Clean up parallel workers
-# plan(sequential)
-```
-
 
 ```{r}
 # Load necessary packages
-library(ggmap)
 library(tidyverse)
 library(furrr)
 library(geosphere)
 library(tidygeocoder)
-
-# Register your Google API key
-# register_google(key = "AIzaSyClN4aPVApFqDwxCq-23wDACfbSnsTqDHY", write = TRUE)
+library(usethis)
 
 # Set up parallel processing
 plan(multisession, workers = parallel::detectCores() - 1)
 
-# Function to geocode a single address using Google Maps API
+# Set your Google API key for tidygeocoder
+# options(tidygeocoder.google_api_key = "YOUR_API_KEY")
+# Sys.setenv(GOOGLEGEOCODE_API_KEY = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
+# Function to geocode a single address using Google via tidygeocoder
 geocode_address <- function(location) {
   tryCatch({
-    result <- geocode(location, output = "latlon", source = "google", override_limit = TRUE)
-    if (nrow(result) > 0) {
-      return(result[1, ])
+    print(paste("Geocoding address:", location))
+    result <- geo(address = location, method = 'google', mode = 'single')
+    if (!is.null(result) && nrow(result) > 0) {
+      return(data.frame(lon = result$long, lat = result$lat))
     } else {
+      print(paste("Geocoding failed for:", location))
       return(data.frame(lon = NA_real_, lat = NA_real_))
     }
   }, error = function(e) {
-    data.frame(lon = NA_real_, lat = NA_real_)
+    print(paste("Error geocoding address:", location))
+    print(e)
+    return(data.frame(lon = NA_real_, lat = NA_real_))
   })
 }
 
 # Function to geocode a single city using OSM via tidygeocoder
 geocode_city <- function(location) {
   tryCatch({
-    result <- geo(address = location, method = 'osm')
+    print(paste("Geocoding city:", location))
+    result <- geo(address = location, method = 'osm', mode = 'single')
     if (!is.null(result) && nrow(result) > 0) {
       return(data.frame(lon = result$long, lat = result$lat))
     } else {
+      print(paste("City geocoding failed for:", location))
       return(data.frame(lon = NA_real_, lat = NA_real_))
     }
   }, error = function(e) {
-    data.frame(lon = NA_real_, lat = NA_real_)
+    print(paste("Error geocoding city:", location))
+    print(e)
+    return(data.frame(lon = NA_real_, lat = NA_real_))
   })
 }
 
-# Step 1: Geocode addresses from df$Address with parallel processing using Google Maps API
+# Prepare your data
+
+# Step 1: Geocode addresses from df$Address_full with parallel processing using tidygeocoder
 df <- df %>%
   mutate(
     geocode_results = future_map(Address, geocode_address, .progress = TRUE),
     longitude = map_dbl(geocode_results, "lon"),
     latitude = map_dbl(geocode_results, "lat")
-  )  # Remove geocode_results column if not needed
-df$geocode_results
+  ) %>%
+  select(-geocode_results)  # Remove geocode_results column if not needed
+
 # Step 2: Geocode unique cities from df$Asset.Cities using OSM via tidygeocoder
 unique_cities <- df %>%
   distinct(Asset.Cities) %>%
   rename(city = Asset.Cities) %>%
-  mutate(city_full = paste0(city, ", California"))  # Create city_full for geocoding
+  mutate(city_full = paste0(city, ", California"))  # Adjust as needed
 
-df
 city_coords <- unique_cities %>%
   mutate(
     geocode_results = future_map(city_full, geocode_city, .progress = TRUE),
@@ -302,19 +255,11 @@ city_coords <- unique_cities %>%
   ) %>%
   select(city, long_center, lat_center)  # Keep only necessary columns
 
-# Verify that city_coords has the expected columns
-print("city_coords columns:")
-print(names(city_coords))
-
-# Step 3: Join city coordinates back to the main dataframe
+# Join city coordinates back to the main dataframe
 df <- df %>%
   left_join(city_coords, by = c("Asset.Cities" = "city"))
 
-# Verify that df has the long_center and lat_center columns after join
-print("df columns after left_join:")
-print(names(df))
-
-# Step 4: Calculate haversine distance and add sanity check column
+# Calculate haversine distance and add sanity check column
 df <- df %>%
   mutate(
     distance = distHaversine(
@@ -330,24 +275,18 @@ df <- df %>%
   )
 
 # View the final dataframe
-df
+print(df)
+
 
 # Clean up parallel processing plan
 plan(sequential)
-
 ```
 
 
 ```{r}
-sum(df$sanity_check == "Geocoding Failed")
+df <- readRDS("df_geocoded_clean.rds")
 
-
-d$latitude
-
-d
-
-# get number of NA values in latitude
-sum(is.na(d$latitude))
-
+head(df)
 ```
+
 
