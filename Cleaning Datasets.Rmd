@@ -52,8 +52,8 @@ clean_colnames <- function(col_names) {
 
 colnames(d_final) <- clean_colnames(colnames(d_final))
 
-
-ca = d_final[d_final$`Asset States` == "CA", ]
+ca = d_final
+# ca = d_final[d_final$`Asset States` == "CA", ]
 unique(ca$`Asset Cities`)
 
 # keep only first location for each deal
@@ -62,7 +62,31 @@ unique(ca$`Asset Cities`)
 ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
 
 
+head(ca)
+
 ```
+
+```{r}
+# Load necessary libraries
+ca$`Deal Date` <- as.POSIXct(ca$`Deal Date`, format = "%Y-%m-%d %H:%M:%S")
+
+# Create a new `Year` column
+ca$Year <- year(ca$`Deal Date`)
+
+ca <- ca[ca$Year >= 2010, ]
+# Create a histogram grouped by year
+ggplot(ca, aes(x = Year)) +
+  geom_histogram(binwidth = 1,  # Binwidth of 1 year
+                 fill = "blue", color = "black") +
+  labs(
+    title = "Histogram of Deal Count by Year",
+    x = "Year",
+    y = "Count of Deals"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
 
 # BLS Data
 ```{r}
@@ -346,7 +370,6 @@ df <- df %>%
 ```
 
 ```{r}
-# Step 1: Get distinct towns and asset cities with their coordinates
 df_geo <- df %>%
   distinct(Town) %>%
   mutate(Town = paste(Town, "California", sep = ", ")) %>%
@@ -359,6 +382,12 @@ ca_geo <- ca %>%
   mutate(`Asset Cities` = paste(`Asset Cities`, "California", sep = ", ")) %>%
   geocode(address = `Asset Cities`, method = "osm", lat = latitude, long = longitude)
 
+
+
+
+```
+
+```{r}
 # Step 2: Calculate distances between each Town in df and each Asset City in ca
 distance_results <- expand.grid(df_geo$Town, ca_geo$`Asset Cities`) %>%
   rename(Town = Var1, `Asset Cities` = Var2) %>%
@@ -366,19 +395,26 @@ distance_results <- expand.grid(df_geo$Town, ca_geo$`Asset Cities`) %>%
   left_join(ca_geo, by = c("Asset Cities" = "Asset Cities"), suffix = c("_df", "_ca")) %>%
   mutate(distance = distHaversine(cbind(longitude_df, latitude_df), cbind(longitude_ca, latitude_ca)))
 
-# Step 3: Find the nearest Town for each Asset City, and filter by distance <= 50,000
+# Step 3: Find the nearest Town for each Asset City, and filter by distance <= 100km
 nearest_matches <- distance_results %>%
   group_by(`Asset Cities`) %>%
   slice_min(order_by = distance, n = 1) %>%
   ungroup() %>%
-  filter(distance <= 100000) %>%  # Filter to only keep rows with distance <= 50000
+  filter(distance <= 100000) %>%  # Filter to only keep rows with distance <= 100km
   select(Town, `Asset Cities`, distance)
 
-nearest_matches %>% arrange(desc(distance))
+nearest_matches <- nearest_matches %>%
+  mutate(
+    Town = gsub(", California", "", Town),
+    `Asset Cities` = gsub(", California", "", `Asset Cities`)
+  )
+
+
 
 # Step 4: Add nearest matches to the ca dataset
 ca <- ca %>%
   left_join(nearest_matches, by = "Asset Cities")
+
 
 # Step 5: Extract the Year-Month from the Date column in both ca and df
 df <- df %>%
@@ -391,6 +427,8 @@ ca <- ca %>%
 ca <- ca %>%
   filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2023-06-01")
 
+ca
+
 # Step 6: Merge ca and df on Town and Year_Month
 merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
@@ -400,7 +438,5 @@ head(merged_data)
 
 dim(merged_data)
 
-# Optional: Save as CSV
-write.csv(merged_data, "merged_final.csv")
-
+# write.csv(merged_data, "merged_final_new.csv")
 ``` 

@@ -19,45 +19,67 @@ library(tidyr)
 ```
 
 ```{r}
-# load csv
-df <- read.csv("merged.csv")
-
-dim(df)
-
-df <- df %>%
-  select(-c("Deal.Name", "Deal.Date", "Primary.Location", "Deal.Overview", "Asset.Regions", "Asset.Countries", "Asset.States", "Date", "X"))
-#check distribution of date with histogram
-
 # Load necessary libraries
 library(ggplot2)
 library(dplyr)
 
-# Plot histogram for distribution over time based on Year_Month
-ggplot(df, aes(x = Year_Month)) +
+# Load CSV
+df <- read.csv("merged_final_new.csv")
+
+# Print dataframe and dimensions
+head(df)
+
+# Remove unwanted columns
+df <- df %>%
+  select(-c("Deal.Name", "Deal.Date", "Primary.Location", "Deal.Overview", 
+            "Asset.Regions", "Asset.Countries", "Asset.States", "Date", "X"))
+
+# Remove ", California" from 'Town' and 'Asset.Cities' columns
+df <- df %>%
+  mutate(
+    Town = gsub(", California", "", Town),
+    Asset.Cities = gsub(", California", "", Asset.Cities),
+    Year = as.numeric(gsub("-.*", "", Year_Month))
+  )
+
+
+# Check distribution of Year_Month with a histogram
+ggplot(df, aes(x = Year)) +
   geom_bar(fill = "blue", color = "black") +
   labs(title = "Distribution of Deals Over Time", x = "Year_Month", y = "Count of Deals") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+# Inspect dataframe
 head(df)
-# Assuming the township column is 'Primary Location' or similar, adjust if necessary
+
+# Check distribution of deals across townships
 ggplot(df, aes(x = Town)) +
   geom_bar(fill = "green", color = "black") +
   labs(title = "Distribution of Deals Across Townships", x = "Township", y = "Count of Deals") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+# Identify the top 10 towns with the most deals
 top_towns <- df %>%
   count(Town) %>%
   arrange(desc(n)) %>%
   slice_head(n = 10) %>%
   pull(Town)
 
+
+
+# Filter dataframe for the top 10 towns
 df_top <- df %>%
   filter(Town %in% top_towns)
 
-# Plot using facets for each town
-ggplot(df_top, aes(x = Year_Month)) +
+ggplot(df_top, aes(x = Town)) +
+  geom_bar(fill = "green", color = "black") +
+  labs(title = "Distribution of Deals Across Townships", x = "Township", y = "Count of Deals") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Plot distribution over time for the top 10 towns using facets
+ggplot(df_top, aes(x = Year)) +
   geom_bar(fill = "skyblue", color = "black") +
   facet_wrap(~ Town, scales = "free_y") +
   labs(title = "Distribution of Deals Over Time for Top 10 Towns",
@@ -65,7 +87,267 @@ ggplot(df_top, aes(x = Year_Month)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+# Inspect dataframe and unique asset cities
+head(df)
+length(unique(df$Asset.Cities))
+
+```
+```{r}
+# remove unnessary/redundant columns
+df <- df %>%
+  select(-c(
+    Estimate.Population.16.years.and.over,
+    Estimate.In.labor.force,
+    Estimate.In.labor.force..Civilian.labor.force,
+    Estimate.In.labor.force.Employed,
+    Estimate.In.labor.force.Unemployed,
+    Estimate.In.labor.force..Armed.Forces,
+    Estimate.Not.in.labor.force,
+    Estimate.Civilian.labor.force,
+    Estimate.Females.16.years.and.over,
+    Estimate.All.parents.in.family.in.labor.force,
+    Estimate.Workers.16.years.and.over,
+    Estimate.Other.means,
+    Estimate.Civilian.employed.population.16.years.and.over,
+    Estimate.Civilian.employed.population.16.years.and.over.1,
+    Estimate.Civilian.employed.population.16.years.and.over.2,
+    Estimate.Total.households,
+    Estimate.Less.than..10.000,
+    Estimate..10.000.to..14.999,
+    Estimate..15.000.to..24.999,
+    Estimate..25.000.to..34.999,
+    Estimate..35.000.to..49.999,
+    Estimate..50.000.to..74.999,
+    Estimate..75.000.to..99.999,
+    Estimate..100.000.to..149.999,
+    Estimate..150.000.to..199.999,
+    Estimate..200.000.or.more,
+    Estimate.Mean.household.income..dollars.,
+    Estimate.With.earnings..Mean.earnings..dollars.,
+    Estimate.With.Social.Security..Mean.Social.Security.income..dollars.,
+    Estimate.With.retirement.income..Mean.retirement.income..dollars.,
+    Estimate.With.Supplemental.Security.Income..Mean.Supplemental.Security.Income..dollars.,
+    Estimate.With.cash.public.assistance.income..Mean.cash.public.assistance.income..dollars.,
+    Estimate.Families,
+    Estimate.Median.family.income..dollars.,
+    Estimate.Mean.family.income..dollars.,
+    Estimate.Per.capita.income..dollars.,
+    Estimate.Nonfamily.households,
+    Estimate.Median.nonfamily.income..dollars.,
+    Estimate.Mean.nonfamily.income..dollars.,
+    Estimate.Median.earnings.for.workers..dollars.,
+    Estimate.Median.earnings.for.male.full.time..year.round.workers..dollars.,
+    Estimate.Median.earnings.for.female.full.time..year.round.workers..dollars.,
+    Estimate.Civilian.noninstitutionalized.population,
+    Estimate.Civilian.noninstitutionalized.population.under.18.years,
+    Estimate.Civilian.noninstitutionalized.population.18.to.64.years,
+    Estimate.In.labor.force.1,
+    Estimate.In.labor.force..Employed,
+    Estimate.In.labor.force.With.health.insurance.coverage,
+    Estimate.In.labor.force.With.health.insurance.coverage..With.private.health.insurance,
+    Estimate.In.labor.force.With.health.insurance.coverage..With.public.coverage,
+    Estimate.In.labor.force.No.health.insurance.coverage,
+    Estimate.In.labor.force..Unemployed,
+    Estimate.In.labor.force.With.health.insurance.coverage.1,
+    Estimate.In.labor.force.With.health.insurance.coverage..With.private.health.insurance.1,
+    Estimate.In.labor.force.With.health.insurance.coverage..With.public.coverage.1,
+    Estimate.In.labor.force.No.health.insurance.coverage.1,
+    Estimate.Not.in.labor.force.1,
+    Estimate.Not.in.labor.force..With.health.insurance.coverage,
+    Estimate.Not.in.labor.force.With.private.health.insurance,
+    Estimate.Not.in.labor.force.With.public.coverage,
+    Estimate.Not.in.labor.force..No.health.insurance.coverage,
+    Estimate.All.families,
+    Estimate.All.families..With.related.children.under.18.years,
+    Estimate.All.families.With.related.children.under.5.years.only,
+    Estimate.Married.couple.families,
+    Estimate.Married.couple.families..With.related.children.under.18.years,
+    Estimate.Married.couple.families.With.related.children.under.5.years.only,
+    Estimate.Families.with.female.householder..no.husband.present,
+    Estimate.Families.with.female.householder..no.husband.present..With.related.children.under.18.years,
+    Estimate.Families.with.female.householder..no.husband.present.With.related.children.under.5.years.only,
+    Estimate.Under.18.years..Related.children.under.18.years,
+    Estimate.Under.18.years.Related.children.under.5.years,
+    Estimate.Under.18.years.Related.children.5.to.17.years
+  ))
+
+
+
+df$ass
+# for multiple asset portfolios, just keep the first building
+df$Address <- str_extract(df$Assets, "^[^,]+")
+
+df$Address = paste0(df$Address, ", ", df$Asset.Cities, ", California")
+```
+Get logitude and latitude for each address
+```{r}
+library(ggmap)
+library(tidyverse)
+library(furrr)
+library(geosphere)
+
+# # Set up parallel processing
+# plan(multisession, workers = parallel::detectCores() - 1)
+# 
+# # Function to geocode a single location (address or city)
+# geocode_single <- function(location) {
+#   tryCatch({
+#     result <- geo(address = location, method = "osm", full_results = FALSE)
+#     if (nrow(result) > 0) {
+#       result <- result[1, ]  # Take the first result if multiple
+#     }
+#     tibble(latitude = result$lat, longitude = result$long)
+#   }, error = function(e) {
+#     tibble(latitude = NA_real_, longitude = NA_real_)
+#   })
+# }
+# 
+# # Step 1: Geocode unique cities from df$Asset.Cities
+# city_coords <- df %>%
+#   distinct(Asset.Cities) %>%
+#   rename(city = Asset.Cities) %>%
+#   mutate(geocode_results = future_map(city, geocode_single, .progress = TRUE)) %>%
+#   unnest_wider(geocode_results) %>%
+#   rename(lat_center = latitude, long_center = longitude)
+# 
+# # Step 2: Geocode addresses from df$Address with parallel processing
+# df <- df %>%
+#   mutate(geocode_results = future_map(Address, geocode_single, .progress = TRUE)) %>%
+#   unnest_wider(geocode_results) %>%
+#   rename(latitude = latitude, longitude = longitude)
+# 
+# # Step 3: Join city coordinates back to the main dataframe
+# df <- df %>%
+#   left_join(city_coords, by = c("Asset.Cities" = "city"))
+# 
+# # Step 4: Calculate haversine distance and flag outliers
+# df <- df %>%
+#   mutate(
+#     distance = distHaversine(cbind(longitude, latitude), cbind(long_center, lat_center)),
+#     longitude = if_else(distance > 50000, NA_real_, longitude),  # 50 km threshold
+#     latitude = if_else(distance > 50000, NA_real_, latitude)
+#   )
+# 
+# # View results
+# print(df)
+
+# saveRDS(df, "df_geocoded.rds")
+# Clean up parallel workers
+# plan(sequential)
+```
+
+
+```{r}
+# Load necessary packages
+library(ggmap)
+library(tidyverse)
+library(furrr)
+library(geosphere)
+library(tidygeocoder)
+
+# Register your Google API key
+# register_google(key = "AIzaSyClN4aPVApFqDwxCq-23wDACfbSnsTqDHY", write = TRUE)
+
+# Set up parallel processing
+plan(multisession, workers = parallel::detectCores() - 1)
+
+# Function to geocode a single address using Google Maps API
+geocode_address <- function(location) {
+  tryCatch({
+    result <- geocode(location, output = "latlon", source = "google", override_limit = TRUE)
+    if (nrow(result) > 0) {
+      return(result[1, ])
+    } else {
+      return(data.frame(lon = NA_real_, lat = NA_real_))
+    }
+  }, error = function(e) {
+    data.frame(lon = NA_real_, lat = NA_real_)
+  })
+}
+
+# Function to geocode a single city using OSM via tidygeocoder
+geocode_city <- function(location) {
+  tryCatch({
+    result <- geo(address = location, method = 'osm')
+    if (!is.null(result) && nrow(result) > 0) {
+      return(data.frame(lon = result$long, lat = result$lat))
+    } else {
+      return(data.frame(lon = NA_real_, lat = NA_real_))
+    }
+  }, error = function(e) {
+    data.frame(lon = NA_real_, lat = NA_real_)
+  })
+}
+
+# Step 1: Geocode addresses from df$Address with parallel processing using Google Maps API
+df <- df %>%
+  mutate(
+    geocode_results = future_map(Address, geocode_address, .progress = TRUE),
+    longitude = map_dbl(geocode_results, "lon"),
+    latitude = map_dbl(geocode_results, "lat")
+  )  # Remove geocode_results column if not needed
+df$geocode_results
+# Step 2: Geocode unique cities from df$Asset.Cities using OSM via tidygeocoder
+unique_cities <- df %>%
+  distinct(Asset.Cities) %>%
+  rename(city = Asset.Cities) %>%
+  mutate(city_full = paste0(city, ", California"))  # Create city_full for geocoding
+
+df
+city_coords <- unique_cities %>%
+  mutate(
+    geocode_results = future_map(city_full, geocode_city, .progress = TRUE),
+    long_center = map_dbl(geocode_results, "lon"),
+    lat_center = map_dbl(geocode_results, "lat")
+  ) %>%
+  select(city, long_center, lat_center)  # Keep only necessary columns
+
+# Verify that city_coords has the expected columns
+print("city_coords columns:")
+print(names(city_coords))
+
+# Step 3: Join city coordinates back to the main dataframe
+df <- df %>%
+  left_join(city_coords, by = c("Asset.Cities" = "city"))
+
+# Verify that df has the long_center and lat_center columns after join
+print("df columns after left_join:")
+print(names(df))
+
+# Step 4: Calculate haversine distance and add sanity check column
+df <- df %>%
+  mutate(
+    distance = distHaversine(
+      cbind(longitude, latitude),
+      cbind(long_center, lat_center)
+    ),
+    sanity_check = case_when(
+      is.na(longitude) | is.na(latitude) ~ "Geocoding Failed",
+      is.na(long_center) | is.na(lat_center) ~ "City Geocoding Failed",
+      distance <= 50000 ~ "Pass",
+      TRUE ~ "Fail"
+    )
+  )
+
+# View the final dataframe
+df
+
+# Clean up parallel processing plan
+plan(sequential)
 
 ```
 
+
+```{r}
+sum(df$sanity_check == "Geocoding Failed")
+
+
+d$latitude
+
+d
+
+# get number of NA values in latitude
+sum(is.na(d$latitude))
+
+```
 
