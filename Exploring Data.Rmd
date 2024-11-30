@@ -383,7 +383,6 @@ png_files <- list.files(output_dir, pattern = "*.png", full.names = TRUE)
 gif <- image_read(png_files)
 gif <- image_animate(gif, fps = 5)  # Adjust FPS for animation speed
 image_write(gif, "los_angeles_deals.gif")
-
 ```
 
 

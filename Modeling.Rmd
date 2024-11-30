@@ -1,0 +1,122 @@
+---
+title: "Modeling"
+author: "Matthew Ross"
+date: "2024-11-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(dplyr)
+library(tidyr)
+library(mgcv)
+library(tidygeocoder)
+```
+
+```{r}
+d <- read.csv("intermediate.csv")
+
+unique_towns <- d %>%
+  distinct(Town) %>%
+  filter(!is.na(Town)) %>%
+  mutate(full_address = paste0(Town, ", California"))
+
+# Geocode towns to get latitude and longitude
+town_coords <- unique_towns %>%
+  geocode(address = full_address, method = "osm") %>%
+  rename(lat.census.town = lat, lon.census.town = long)
+
+# Merge geocoded coordinates back into the main dataframe
+d <- d %>%
+  left_join(town_coords, by = "Town")
+```
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(lme4)
+library(INLA)
+
+# Step 1: Data Preparation
+# Define predictors relevant to economic variables and geography
+predictors <- c(
+  "Year_Month", "Town", "Primary.Asset.Type", "distance", "Fed_Rate", 
+  "Labor_Force", "Employment", "Unemployment", "Unemployment_Rate", "HomeValue", 
+  "Estimate.Median.household.income..dollars.", "Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months", 
+  "Estimate.With.health.insurance.coverage..With.private.health.insurance", 
+  "Estimate.With.health.insurance.coverage..With.public.coverage", "Opportunity_Zone"
+)
+
+# Aggregate data to calculate deal volume (number of deals) and standardize predictors
+df_grouped <- df %>%
+  mutate(
+    Year_Month = ymd(Year_Month),  # Ensure Year_Month is a date
+    Deal_Count = 1                # Each row represents a deal
+  ) %>%
+  group_by(Town, Year_Month, Primary.Asset.Type) %>%
+  summarize(
+    Deal_Volume = sum(Deal_Count, na.rm = TRUE),  # Total deals in each group
+    across(all_of(setdiff(predictors, c("Year_Month", "Town", "Primary.Asset.Type"))), 
+           ~ mean(., na.rm = TRUE), .names = "{.col}")  # Average economic variables
+  ) %>%
+  ungroup()
+
+# Step 2: Normalize Predictors
+# Standardize all numeric predictors for better interpretability in models
+numeric_predictors <- setdiff(predictors, c("Year_Month", "Town", "Primary.Asset.Type"))
+df_grouped <- df_grouped %>%
+  mutate(across(all_of(numeric_predictors), scale))
+
+# Step 3: Time Series Modeling
+# Define the formula for deal volume as a function of economic predictors
+formula <- Deal_Volume ~ 
+  distance + Fed_Rate + Labor_Force + Employment + Unemployment_Rate + HomeValue + 
+  Estimate.Median.household.income..dollars. + 
+  Estimate.With.health.insurance.coverage..With.private.health.insurance + 
+  Opportunity_Zone + 
+  f(Town, model = "iid") +   # Random effects for towns
+  f(Year_Month, model = "ar1")  # Temporal dependence
+
+# Fit the INLA model segmented by asset class
+results <- list()  # To store models by asset class
+asset_classes <- unique(df_grouped$Primary.Asset.Type)
+
+for (asset_class in asset_classes) {
+  model_data <- df_grouped %>% filter(Primary.Asset.Type == asset_class)
+  results[[asset_class]] <- inla(
+    formula,
+    data = model_data,
+    family = "poisson"  # Assuming count data for deal volume
+  )
+}
+
+# Step 4: Model Summary and Interpretation
+# Extract and display summaries for each asset class model
+for (asset_class in asset_classes) {
+  cat("\n--- Asset Class:", asset_class, "---\n")
+  print(summary(results[[asset_class]]))
+}
+
+# Step 5: Identify Valuable Geographies
+# Compare observed vs. predicted deal volumes for each geography
+predictions <- df_grouped %>%
+  group_by(Town, Primary.Asset.Type) %>%
+  summarize(
+    Observed = sum(Deal_Volume),
+    Predicted = sum(results[[Primary.Asset.Type]]$summary.fitted.values$mean)  # Predicted deal volume
+  ) %>%
+  mutate(Residual = Observed - Predicted) %>%
+  arrange(desc(Residual))  # Geographies with lower predicted deal volumes
+
+# Step 6: Insights and Recommendations
+# Identify key geographies with positive economic characteristics but low deal volumes
+valuable_geographies <- predictions %>%
+  filter(Residual < 0)  # Residual < 0 indicates underperforming deal volume
+
+```
+
+
