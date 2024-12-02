@@ -36,87 +36,145 @@ d <- d %>%
 ```{r}
 # Load required libraries
 library(dplyr)
-library(tidyr)
 library(lubridate)
-library(lme4)
+library(glmnet)
 library(INLA)
 
-# Step 1: Data Preparation
-# Define predictors relevant to economic variables and geography
-predictors <- c(
-  "Year_Month", "Town", "Primary.Asset.Type", "distance", "Fed_Rate", 
-  "Labor_Force", "Employment", "Unemployment", "Unemployment_Rate", "HomeValue", 
-  "Estimate.Median.household.income..dollars.", "Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months", 
-  "Estimate.With.health.insurance.coverage..With.private.health.insurance", 
-  "Estimate.With.health.insurance.coverage..With.public.coverage", "Opportunity_Zone"
+d %>% filter(Year == "2010")
+
+e <- read.csv('merged_final_new.csv')
+e %>% filter(Date_Year == "2010")
+
+# Step 1: Aggregate Data to 6-Month Periods
+
+numeric_columns <- d %>%
+  select(starts_with("Estimate.")) %>%
+  select(where(is.numeric)) %>%
+  colnames()
+d %>%
+  filter(Town == "Alameda") %>%
+  arrange(Year_Month)
+
+d_agg <- d %>%
+  mutate(Year_Month = as.Date(paste0(Year_Month, "-01")),
+         Period = floor_date(Year_Month, unit = "6 months")) %>%
+  group_by(Town, Period) %>%
+  summarise(
+    # Deal metrics
+    Deal_Volume = n(),  # Count total deals per group
+    Avg_Deal_Size = mean(Deal.Size.Usd.Mn., na.rm = TRUE),  # Average deal size
+    Total_Size_Sq_Ft = mean(Total.Size.Sq.Ft., na.rm = TRUE),  # Average size in sq ft
+    Total_Deal_Size_Usd_Mn = sum(Deal.Size.Usd.Mn., na.rm = TRUE),  # Total deal size
+
+    # Monthly predictors
+    Fed_Rate = mean(Fed_Rate, na.rm = TRUE),
+    Unemployment_Rate = mean(Unemployment_Rate, na.rm = TRUE),
+    HomeValue = mean(HomeValue, na.rm = TRUE),
+
+    # Yearly predictors: Only numeric "Estimate." columns
+    across(all_of(numeric_columns), ~ mean(., na.rm = TRUE), .names = "{.col}"),
+
+    # Categorical predictors
+    Opportunity_Zone = first(Opportunity_Zone),
+
+    # Geographic information
+    lat.census.town = first(lat.census.town),
+    lon.census.town = first(lon.census.town),
+    .groups = "drop"
+  )
+
+d_agg
+# Step 2: Prepare Data for LASSO
+# Convert categorical variables to factors
+d <- d %>%
+  mutate(Opportunity_Zone = as.factor(Opportunity_Zone))
+
+# Select predictors and response variable
+X <- model.matrix(
+  Deal_Volume ~ . - Town - Period - lat.census.town - lon.census.town - 1,
+  data = d
+)
+y <- d$Deal_Volume
+
+# Step 3: Perform LASSO Regression
+lasso_model <- cv.glmnet(X, y, alpha = 1, family = "poisson")  # LASSO for variable selection
+lasso_coefficients <- coef(lasso_model, s = "lambda.min")  # Coefficients at optimal lambda
+
+# Extract selected predictors
+selected_predictors <- rownames(lasso_coefficients)[lasso_coefficients != 0]
+selected_predictors <- selected_predictors[selected_predictors != "(Intercept)"]
+
+# Step 4: Spatio-Temporal Model Using INLA
+# Define spatial mesh
+coords <- d %>%
+  select(lon.census.town, lat.census.town) %>%
+  distinct() %>%
+  as.matrix()
+
+mesh <- inla.mesh.2d(loc = coords, max.edge = c(0.1, 0.5), cutoff = 0.05)
+
+# Define spatial field
+spde <- inla.spde2.pcmatern(
+  mesh = mesh,
+  alpha = 2,  # Smoothness parameter
+  prior.range = c(0.1, 0.5),  # Prior for spatial range
+  prior.sigma = c(1, 0.1)     # Prior for marginal standard deviation
 )
 
-# Aggregate data to calculate deal volume (number of deals) and standardize predictors
-df_grouped <- df %>%
-  mutate(
-    Year_Month = ymd(Year_Month),  # Ensure Year_Month is a date
-    Deal_Count = 1                # Each row represents a deal
-  ) %>%
-  group_by(Town, Year_Month, Primary.Asset.Type) %>%
-  summarize(
-    Deal_Volume = sum(Deal_Count, na.rm = TRUE),  # Total deals in each group
-    across(all_of(setdiff(predictors, c("Year_Month", "Town", "Primary.Asset.Type"))), 
-           ~ mean(., na.rm = TRUE), .names = "{.col}")  # Average economic variables
-  ) %>%
-  ungroup()
+# Build INLA stack for spatio-temporal model
+A <- inla.spde.make.A(mesh, loc = coords)
+spatial_index <- inla.spde.make.index("spatial.field", n.spde = spde$n.spde)
 
-# Step 2: Normalize Predictors
-# Standardize all numeric predictors for better interpretability in models
-numeric_predictors <- setdiff(predictors, c("Year_Month", "Town", "Primary.Asset.Type"))
-df_grouped <- df_grouped %>%
-  mutate(across(all_of(numeric_predictors), scale))
-
-# Step 3: Time Series Modeling
-# Define the formula for deal volume as a function of economic predictors
-formula <- Deal_Volume ~ 
-  distance + Fed_Rate + Labor_Force + Employment + Unemployment_Rate + HomeValue + 
-  Estimate.Median.household.income..dollars. + 
-  Estimate.With.health.insurance.coverage..With.private.health.insurance + 
-  Opportunity_Zone + 
-  f(Town, model = "iid") +   # Random effects for towns
-  f(Year_Month, model = "ar1")  # Temporal dependence
-
-# Fit the INLA model segmented by asset class
-results <- list()  # To store models by asset class
-asset_classes <- unique(df_grouped$Primary.Asset.Type)
-
-for (asset_class in asset_classes) {
-  model_data <- df_grouped %>% filter(Primary.Asset.Type == asset_class)
-  results[[asset_class]] <- inla(
-    formula,
-    data = model_data,
-    family = "poisson"  # Assuming count data for deal volume
+stack <- inla.stack(
+  data = list(y = d$Deal_Volume),
+  A = list(A, 1),
+  effects = list(
+    spatial.field = spatial_index,
+    data = d %>% select(all_of(selected_predictors))
   )
-}
+)
 
-# Step 4: Model Summary and Interpretation
-# Extract and display summaries for each asset class model
-for (asset_class in asset_classes) {
-  cat("\n--- Asset Class:", asset_class, "---\n")
-  print(summary(results[[asset_class]]))
-}
+# Define the spatio-temporal model formula
+formula <- y ~ 
+  f(spatial.field, model = spde) +  # Continuous spatial field
+  f(Period, model = "ar1") +        # Temporal autocorrelation
+  .                                 # Include selected predictors dynamically
 
-# Step 5: Identify Valuable Geographies
-# Compare observed vs. predicted deal volumes for each geography
-predictions <- df_grouped %>%
-  group_by(Town, Primary.Asset.Type) %>%
-  summarize(
-    Observed = sum(Deal_Volume),
-    Predicted = sum(results[[Primary.Asset.Type]]$summary.fitted.values$mean)  # Predicted deal volume
-  ) %>%
-  mutate(Residual = Observed - Predicted) %>%
-  arrange(desc(Residual))  # Geographies with lower predicted deal volumes
+# Fit the INLA model
+result <- inla(
+  formula,
+  data = inla.stack.data(stack),
+  family = "poisson",  # Assuming count data for deal volume
+  control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+  control.compute = list(dic = TRUE, waic = TRUE)  # Compute model metrics
+)
 
-# Step 6: Insights and Recommendations
-# Identify key geographies with positive economic characteristics but low deal volumes
-valuable_geographies <- predictions %>%
-  filter(Residual < 0)  # Residual < 0 indicates underperforming deal volume
+# Display model summary
+summary(result)
 
+# Step 5: Visualizations
+# Temporal Trends
+library(ggplot2)
+ggplot(d, aes(x = Period, y = Deal_Volume, group = Town, color = Opportunity_Zone)) +
+  geom_line() +
+  labs(title = "Deal Volume Over Time by Town",
+       x = "6-Month Period",
+       y = "Total Deals",
+       color = "Opportunity Zone") +
+  theme_minimal()
+
+# Spatial Trends
+ggplot(d, aes(x = lon.census.town, y = lat.census.town, size = Deal_Volume, color = Unemployment_Rate)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "Spatial Distribution of Deal Volume",
+       x = "Longitude",
+       y = "Latitude",
+       size = "Total Deals",
+       color = "Unemployment Rate") +
+  theme_minimal()
+d
+
+e %>% filter(Date_Year == "2010")
 ```
 
 

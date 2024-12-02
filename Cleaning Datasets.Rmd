@@ -286,7 +286,7 @@ df <- NULL
 df$Town <- unique(acs$`Geographic Area Name`)
 df$Town <- trimws(df$Town)
 
-months <- seq(as.Date("2010-12-01"), as.Date("2023-06-01"), by = "month")
+months <- seq(as.Date("2010-01-01"), as.Date("2023-06-01"), by = "month")
 df <- expand.grid(Town = df$Town, Date = months)
 head(df)
 
@@ -381,10 +381,6 @@ ca_geo <- ca %>%
   distinct(`Asset Cities`) %>%
   mutate(`Asset Cities` = paste(`Asset Cities`, "California", sep = ", ")) %>%
   geocode(address = `Asset Cities`, method = "osm", lat = latitude, long = longitude)
-
-
-
-
 ```
 
 ```{r}
@@ -427,16 +423,15 @@ ca <- ca %>%
 ca <- ca %>%
   filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2023-06-01")
 
-ca
+dim(ca)
 
 # Step 6: Merge ca and df on Town and Year_Month
 merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
 
 # View the merged data
-head(merged_data)
+merged_data <- merged_data %>% filter(`Asset States` == "California, CA")
 
 dim(merged_data)
-
-# write.csv(merged_data, "merged_final_new.csv")
+write.csv(merged_data, "merged_final_new.csv")
 ``` 

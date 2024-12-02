@@ -180,7 +180,6 @@ df <- df %>%
 
 
 
-df$ass
 # for multiple asset portfolios, just keep the first building
 df$Address <- str_extract(df$Assets, "^[^,]+")
 
@@ -199,7 +198,7 @@ library(usethis)
 plan(multisession, workers = parallel::detectCores() - 1)
 
 # Set your Google API key for tidygeocoder
-# options(tidygeocoder.google_api_key = "YOUR_API_KEY")
+# options(tidygeocoder.google_api_key = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
 # Sys.setenv(GOOGLEGEOCODE_API_KEY = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
 # Function to geocode a single address using Google via tidygeocoder
 geocode_address <- function(location) {
@@ -284,9 +283,11 @@ df <- df %>%
 # View the final dataframe
 print(df)
 
-
 # Clean up parallel processing plan
 plan(sequential)
+
+# Save the cleaned and geocoded dataframe
+saveRDS(df, "df_geocoded_clean.rds")
 ```
 
 First fix rows that failed the sanity check - most are because they are located within large townships whose center location is far from the actual - fixed the ones that actually were gettign the wrong address - only 95 total mismatches
@@ -327,6 +328,7 @@ df <- df %>%
 df <- df %>%
   mutate(sanity_check = ifelse(sanity_check == "Fail", "Pass", sanity_check))
 
+df
 
 # Filter data for Los Angeles
 # Filter data for Los Angeles and arrange by time
