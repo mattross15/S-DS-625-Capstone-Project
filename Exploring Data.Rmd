@@ -33,6 +33,8 @@ library(dplyr)
 # Load CSV
 df <- read.csv("merged_final_new.csv")
 
+dim(df)
+
 # Print dataframe and dimensions
 head(df)
 
@@ -194,6 +196,8 @@ library(geosphere)
 library(tidygeocoder)
 library(usethis)
 
+
+
 # Set up parallel processing
 plan(multisession, workers = parallel::detectCores() - 1)
 
@@ -293,11 +297,9 @@ saveRDS(df, "df_geocoded_clean.rds")
 First fix rows that failed the sanity check - most are because they are located within large townships whose center location is far from the actual - fixed the ones that actually were gettign the wrong address - only 95 total mismatches
 
 
-
 ```{r}
 df <- readRDS("df_geocoded_clean.rds")
 df <- data.frame(df)
-
 # Extract rows that failed the sanity check
 e <- df %>%
   filter(sanity_check == "Fail") %>%
@@ -328,8 +330,12 @@ df <- df %>%
 df <- df %>%
   mutate(sanity_check = ifelse(sanity_check == "Fail", "Pass", sanity_check))
 
-df
+write.csv(df, "intermediate_for_modeling.csv")
 
+```
+
+Leaflet Plotting
+```{r}
 # Filter data for Los Angeles
 # Filter data for Los Angeles and arrange by time
 la_data <- df %>%

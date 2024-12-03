@@ -52,8 +52,7 @@ clean_colnames <- function(col_names) {
 
 colnames(d_final) <- clean_colnames(colnames(d_final))
 
-ca = d_final
-# ca = d_final[d_final$`Asset States` == "CA", ]
+ca = d_final[d_final$`Asset States` == "CA", ]
 unique(ca$`Asset Cities`)
 
 # keep only first location for each deal
@@ -61,8 +60,6 @@ ca$`Asset Cities` <- gsub(",.*", "", ca$`Asset Cities`)
 unique(ca$`Asset Cities`)
 ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
 
-
-head(ca)
 
 ```
 
@@ -405,8 +402,6 @@ nearest_matches <- nearest_matches %>%
     `Asset Cities` = gsub(", California", "", `Asset Cities`)
   )
 
-
-
 # Step 4: Add nearest matches to the ca dataset
 ca <- ca %>%
   left_join(nearest_matches, by = "Asset Cities")
@@ -429,9 +424,7 @@ dim(ca)
 merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
 
-# View the merged data
-merged_data <- merged_data %>% filter(`Asset States` == "California, CA")
 
 dim(merged_data)
-write.csv(merged_data, "merged_final_new.csv")
+# write.csv(merged_data, "merged_final_new.csv")
 ``` 

@@ -16,7 +16,7 @@ library(tidygeocoder)
 ```
 
 ```{r}
-d <- read.csv("intermediate.csv")
+d <- read.csv("intermediate_for_modeling.csv")
 
 unique_towns <- d %>%
   distinct(Town) %>%
@@ -31,70 +31,288 @@ town_coords <- unique_towns %>%
 # Merge geocoded coordinates back into the main dataframe
 d <- d %>%
   left_join(town_coords, by = "Town")
+
+d_new <- d
+
+predictor_data <- read.csv("predictor_data.csv")
 ```
 
 ```{r}
 # Load required libraries
 library(dplyr)
+library(tidyr)
 library(lubridate)
-library(glmnet)
-library(INLA)
+library(zoo)
+library(geosphere)
 
-d %>% filter(Year == "2010")
+# Step 1: Ensure numeric columns in d_new are valid
+d_new <- d_new %>%
+  mutate(across(starts_with("Estimate."), ~ as.numeric(.), .names = "{.col}"))  # Convert non-numeric to NA
 
-e <- read.csv('merged_final_new.csv')
-e %>% filter(Date_Year == "2010")
+# Step 2: Ensure Year_Month is in Date format and create 6-month periods in d_new
+d_new <- d_new %>%
+  mutate(
+    Year_Month = as.Date(paste0(Year_Month, "-01")),
+    Period = floor_date(Year_Month, unit = "6 months")
+  )
 
-# Step 1: Aggregate Data to 6-Month Periods
+# Step 3: Ensure Year_Month and Period in predictor_data and validate numeric columns
+predictor_data <- predictor_data %>%
+  mutate(
+    Year_Month = as.Date(paste0(Year_Month, "-01")),
+    Period = floor_date(Year_Month, unit = "6 months")
+  ) %>%
+  mutate(across(
+    starts_with("Estimate.") | matches("Opportunity_Zone"),
+    ~ as.numeric(.),
+    .names = "{.col}"
+  ))  # Convert non-numeric to NA
 
-numeric_columns <- d %>%
-  select(starts_with("Estimate.")) %>%
-  select(where(is.numeric)) %>%
-  colnames()
-d %>%
-  filter(Town == "Alameda") %>%
-  arrange(Year_Month)
-
-d_agg <- d %>%
-  mutate(Year_Month = as.Date(paste0(Year_Month, "-01")),
-         Period = floor_date(Year_Month, unit = "6 months")) %>%
+# Step 4: Aggregate deal metrics and predictors
+d_aggregated <- d_new %>%
   group_by(Town, Period) %>%
   summarise(
-    # Deal metrics
-    Deal_Volume = n(),  # Count total deals per group
-    Avg_Deal_Size = mean(Deal.Size.Usd.Mn., na.rm = TRUE),  # Average deal size
-    Total_Size_Sq_Ft = mean(Total.Size.Sq.Ft., na.rm = TRUE),  # Average size in sq ft
-    Total_Deal_Size_Usd_Mn = sum(Deal.Size.Usd.Mn., na.rm = TRUE),  # Total deal size
-
-    # Monthly predictors
+    Deal_Volume = n(),
+    Avg_Deal_Size = ifelse(Deal_Volume > 0, mean(Deal.Size.Usd.Mn., na.rm = TRUE), NA),
+    Total_Size_Sq_Ft = ifelse(Deal_Volume > 0, mean(Total.Size.Sq.Ft., na.rm = TRUE), NA),
     Fed_Rate = mean(Fed_Rate, na.rm = TRUE),
     Unemployment_Rate = mean(Unemployment_Rate, na.rm = TRUE),
     HomeValue = mean(HomeValue, na.rm = TRUE),
-
-    # Yearly predictors: Only numeric "Estimate." columns
-    across(all_of(numeric_columns), ~ mean(., na.rm = TRUE), .names = "{.col}"),
-
-    # Categorical predictors
+    across(starts_with("Estimate."), ~ mean(., na.rm = TRUE), .names = "{.col}"),
     Opportunity_Zone = first(Opportunity_Zone),
-
-    # Geographic information
     lat.census.town = first(lat.census.town),
     lon.census.town = first(lon.census.town),
     .groups = "drop"
   )
 
-d_agg
+# Step 5: Fill in missing periods for each Town
+full_grid <- expand.grid(
+  Town = unique(d_new$Town),
+  Period = seq(min(d_new$Period), max(d_new$Period), by = "6 months")
+)
+
+d_aggregated <- full_grid %>%
+  left_join(d_aggregated, by = c("Town", "Period"))
+
+# Step 6: Set Avg_Deal_Size and Total_Size_Sq_Ft to 0 for rows with Deal_Volume = 0
+d_aggregated <- d_aggregated %>%
+  mutate(
+    Deal_Volume = ifelse(is.na(Deal_Volume), 0, Deal_Volume),
+    Avg_Deal_Size = ifelse(Deal_Volume == 0, 0, Avg_Deal_Size),
+    Total_Size_Sq_Ft = ifelse(Deal_Volume == 0, 0, Total_Size_Sq_Ft)
+  )
+
+# Step 7: Perform row-wise updates
+d_aggregated <- d_aggregated %>%
+  rowwise() %>%
+  mutate(
+    Fed_Rate = ifelse(
+      Deal_Volume == 0,
+      mean(predictor_data$Fed_Rate[
+        predictor_data$Period == Period
+      ], na.rm = TRUE),
+      Fed_Rate
+    ),
+    Unemployment_Rate = ifelse(
+      Deal_Volume == 0,
+      mean(predictor_data$Unemployment_Rate[
+        predictor_data$Period == Period
+      ], na.rm = TRUE),
+      Unemployment_Rate
+    ),
+    HomeValue = ifelse(
+      Deal_Volume == 0,
+      mean(predictor_data$HomeValue[
+        predictor_data$Period == Period
+      ], na.rm = TRUE),
+      HomeValue
+    ),
+    Opportunity_Zone = ifelse(
+      Deal_Volume == 0,
+      mean(predictor_data$Opportunity_Zone[
+        predictor_data$Town == Town & predictor_data$Period == Period
+      ], na.rm = TRUE),
+      Opportunity_Zone
+    ),
+    across(
+      starts_with("Estimate."),
+      ~ ifelse(
+        Deal_Volume == 0,
+        mean(predictor_data[[cur_column()]][
+          predictor_data$Town == Town & predictor_data$Period == Period
+        ], na.rm = TRUE),
+        .
+      )
+    ),
+    lat.census.town = first(d_new$lat.census.town[d_new$Town == Town]),
+    lon.census.town = first(d_new$lon.census.town[d_new$Town == Town])
+  ) %>%
+  ungroup()
+
+# Step 8: Forward-backward fill for HomeValue and Estimate.* columns
+d_aggregated <- d_aggregated %>%
+  group_by(Town) %>%
+  mutate(
+    HomeValue = ifelse(
+      is.na(HomeValue),
+      zoo::na.locf(HomeValue, na.rm = FALSE, fromLast = FALSE),
+      HomeValue
+    ),
+    HomeValue = ifelse(
+      is.na(HomeValue),
+      zoo::na.locf(HomeValue, na.rm = FALSE, fromLast = TRUE),
+      HomeValue
+    ),
+    across(
+      starts_with("Estimate."),
+      ~ ifelse(
+        is.na(.),
+        zoo::na.locf(.x, na.rm = FALSE, fromLast = FALSE),
+        .
+      )
+    ),
+    across(
+      starts_with("Estimate."),
+      ~ ifelse(
+        is.na(.),
+        zoo::na.locf(.x, na.rm = FALSE, fromLast = TRUE),
+        .
+      )
+    )
+  ) %>%
+  ungroup()
+
+# Step 9: Fill missing values from nearest town if a town has no data for HomeValue or Estimate.*
+fill_from_nearest <- function(row, target_column) {
+  if (!is.na(row[[target_column]])) {
+    return(row[[target_column]])
+  }
+  
+  current_town <- row$Town
+  current_period <- row$Period
+  current_lat <- row$lat.census.town
+  current_lon <- row$lon.census.town
+  
+  valid_towns <- d_aggregated %>%
+    filter(!is.na(!!sym(target_column)) & Period == current_period) %>%
+    mutate(distance = distHaversine(cbind(lon.census.town, lat.census.town), 
+                                    c(current_lon, current_lat))) %>%
+    arrange(distance)
+  
+  if (nrow(valid_towns) > 0) {
+    return(valid_towns[[target_column]][1])
+  }
+  
+  return(NA)
+}
+
+# Apply nearest town logic
+d_aggregated <- d_aggregated %>%
+  rowwise() %>%
+  mutate(
+    HomeValue = ifelse(is.na(HomeValue), fill_from_nearest(cur_data(), "HomeValue"), HomeValue),
+    across(
+      starts_with("Estimate."),
+      ~ ifelse(is.na(.), fill_from_nearest(cur_data(), cur_column()), .)
+    )
+  ) %>%
+  ungroup()
+
+
+
+```
+```{r}
+library(zoo)
+library(geosphere)
+
+# Forward-backward search for Avg_Deal_Size and Total_Size_Sq_Ft within each town
+d_aggregated <- d_aggregated %>%
+  group_by(Town) %>%
+  mutate(
+    Avg_Deal_Size = ifelse(
+      is.na(Avg_Deal_Size),
+      zoo::na.locf(Avg_Deal_Size, na.rm = FALSE, fromLast = FALSE),
+      Avg_Deal_Size
+    ),
+    Avg_Deal_Size = ifelse(
+      is.na(Avg_Deal_Size),
+      zoo::na.locf(Avg_Deal_Size, na.rm = FALSE, fromLast = TRUE),
+      Avg_Deal_Size
+    ),
+    Total_Size_Sq_Ft = ifelse(
+      is.na(Total_Size_Sq_Ft),
+      zoo::na.locf(Total_Size_Sq_Ft, na.rm = FALSE, fromLast = FALSE),
+      Total_Size_Sq_Ft
+    ),
+    Total_Size_Sq_Ft = ifelse(
+      is.na(Total_Size_Sq_Ft),
+      zoo::na.locf(Total_Size_Sq_Ft, na.rm = FALSE, fromLast = TRUE),
+      Total_Size_Sq_Ft
+    )
+  ) %>%
+  ungroup()
+
+# Define the function for nearest-town analysis
+fill_from_nearest <- function(row, target_column) {
+  if (!is.na(row[[target_column]])) {
+    return(row[[target_column]])  # Return existing value if it's not NA
+  }
+  
+  # Extract relevant information for the current row
+  current_town <- row$Town
+  current_period <- row$Period
+  current_lat <- row$lat.census.town
+  current_lon <- row$lon.census.town
+  
+  # Find the nearest town with valid data for the target column
+  valid_towns <- d_aggregated %>%
+    filter(!is.na(!!sym(target_column)) & Deal_Volume > 1 & Period == current_period) %>%
+    mutate(distance = distHaversine(cbind(lon.census.town, lat.census.town), 
+                                    c(current_lon, current_lat))) %>%
+    arrange(distance)  # Sort by distance
+  
+  if (nrow(valid_towns) > 0) {
+    return(valid_towns[[target_column]][1])  # Return the value from the nearest valid town
+  }
+  
+  return(NA)  # Return NA if no valid data is found
+}
+
+# Apply nearest-town logic to Avg_Deal_Size and Total_Size_Sq_Ft
+d_aggregated <- d_aggregated %>%
+  rowwise() %>%
+  mutate(
+    Avg_Deal_Size = ifelse(is.na(Avg_Deal_Size), fill_from_nearest(cur_data(), "Avg_Deal_Size"), Avg_Deal_Size),
+    Total_Size_Sq_Ft = ifelse(is.na(Total_Size_Sq_Ft), fill_from_nearest(cur_data(), "Total_Size_Sq_Ft"), Total_Size_Sq_Ft)
+  ) %>%
+  ungroup()
+
+
+```
+
+
+
+
+```{r}
+library(INLA)
 # Step 2: Prepare Data for LASSO
 # Convert categorical variables to factors
-d <- d %>%
-  mutate(Opportunity_Zone = as.factor(Opportunity_Zone))
+numeric_predictors <- d_aggregated %>%
+  select(Fed_Rate, Unemployment_Rate, HomeValue, all_of(numeric_columns)) %>%
+  colnames()
 
-# Select predictors and response variable
+# Apply normalization to numeric predictors
+d_aggregated <- d_aggregated %>%
+  mutate(across(all_of(numeric_predictors), scale, .names = "{.col}_scaled"))
+
+# LASSO Regression (using normalized predictors)
 X <- model.matrix(
   Deal_Volume ~ . - Town - Period - lat.census.town - lon.census.town - 1,
-  data = d
+  data = d_aggregated %>%
+    select(ends_with("_scaled"), Deal_Volume, Opportunity_Zone)
 )
-y <- d$Deal_Volume
+y <- d_aggregated$Deal_Volume
+y <- d_aggregated$Deal_Volume
 
 # Step 3: Perform LASSO Regression
 lasso_model <- cv.glmnet(X, y, alpha = 1, family = "poisson")  # LASSO for variable selection
@@ -106,7 +324,7 @@ selected_predictors <- selected_predictors[selected_predictors != "(Intercept)"]
 
 # Step 4: Spatio-Temporal Model Using INLA
 # Define spatial mesh
-coords <- d %>%
+coords <- d_aggregated %>%
   select(lon.census.town, lat.census.town) %>%
   distinct() %>%
   as.matrix()
@@ -126,11 +344,11 @@ A <- inla.spde.make.A(mesh, loc = coords)
 spatial_index <- inla.spde.make.index("spatial.field", n.spde = spde$n.spde)
 
 stack <- inla.stack(
-  data = list(y = d$Deal_Volume),
+  data = list(y = d_aggregated$Deal_Volume),
   A = list(A, 1),
   effects = list(
     spatial.field = spatial_index,
-    data = d %>% select(all_of(selected_predictors))
+    data = d_aggregated %>% select(all_of(selected_predictors))
   )
 )
 
@@ -155,7 +373,7 @@ summary(result)
 # Step 5: Visualizations
 # Temporal Trends
 library(ggplot2)
-ggplot(d, aes(x = Period, y = Deal_Volume, group = Town, color = Opportunity_Zone)) +
+ggplot(d_aggregated, aes(x = Period, y = Deal_Volume, group = Town, color = Opportunity_Zone)) +
   geom_line() +
   labs(title = "Deal Volume Over Time by Town",
        x = "6-Month Period",
@@ -164,7 +382,7 @@ ggplot(d, aes(x = Period, y = Deal_Volume, group = Town, color = Opportunity_Zon
   theme_minimal()
 
 # Spatial Trends
-ggplot(d, aes(x = lon.census.town, y = lat.census.town, size = Deal_Volume, color = Unemployment_Rate)) +
+ggplot(d_aggregated, aes(x = lon.census.town, y = lat.census.town, size = Deal_Volume, color = Unemployment_Rate)) +
   geom_point(alpha = 0.7) +
   labs(title = "Spatial Distribution of Deal Volume",
        x = "Longitude",
@@ -172,9 +390,9 @@ ggplot(d, aes(x = lon.census.town, y = lat.census.town, size = Deal_Volume, colo
        size = "Total Deals",
        color = "Unemployment Rate") +
   theme_minimal()
-d
 
-e %>% filter(Date_Year == "2010")
+
+
 ```
 
 
