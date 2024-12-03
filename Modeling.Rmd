@@ -33,7 +33,6 @@ d <- d %>%
   left_join(town_coords, by = "Town")
 
 d_new <- d
-
 predictor_data <- read.csv("predictor_data.csv")
 ```
 
@@ -68,8 +67,14 @@ predictor_data <- predictor_data %>%
     .names = "{.col}"
   ))  # Convert non-numeric to NA
 
-# Step 4: Aggregate deal metrics and predictors
 d_aggregated <- d_new %>%
+  mutate(
+    Asset_Class = case_when(
+      Primary.Asset.Type %in% c("Residential", "Industrial", "Office", "Retail") ~ Primary.Asset.Type,
+      Primary.Asset.Type %in% c("Niche", "Mixed Use", "Land", "Hotel") ~ "Other",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
   group_by(Town, Period) %>%
   summarise(
     Deal_Volume = n(),
@@ -82,6 +87,11 @@ d_aggregated <- d_new %>%
     Opportunity_Zone = first(Opportunity_Zone),
     lat.census.town = first(lat.census.town),
     lon.census.town = first(lon.census.town),
+    Residential_Percentage = sum(Asset_Class == "Residential") / Deal_Volume * 100,
+    Industrial_Percentage = sum(Asset_Class == "Industrial") / Deal_Volume * 100,
+    Office_Percentage = sum(Asset_Class == "Office") / Deal_Volume * 100,
+    Retail_Percentage = sum(Asset_Class == "Retail") / Deal_Volume * 100,
+    Other_Percentage = sum(Asset_Class == "Other") / Deal_Volume * 100,
     .groups = "drop"
   )
 
@@ -94,14 +104,18 @@ full_grid <- expand.grid(
 d_aggregated <- full_grid %>%
   left_join(d_aggregated, by = c("Town", "Period"))
 
-# Step 6: Set Avg_Deal_Size and Total_Size_Sq_Ft to 0 for rows with Deal_Volume = 0
+# Step 6: Set percentages and metrics to 0 for periods with no deals
 d_aggregated <- d_aggregated %>%
   mutate(
     Deal_Volume = ifelse(is.na(Deal_Volume), 0, Deal_Volume),
     Avg_Deal_Size = ifelse(Deal_Volume == 0, 0, Avg_Deal_Size),
-    Total_Size_Sq_Ft = ifelse(Deal_Volume == 0, 0, Total_Size_Sq_Ft)
+    Total_Size_Sq_Ft = ifelse(Deal_Volume == 0, 0, Total_Size_Sq_Ft),
+    Residential_Percentage = ifelse(Deal_Volume == 0, 0, Residential_Percentage),
+    Industrial_Percentage = ifelse(Deal_Volume == 0, 0, Industrial_Percentage),
+    Office_Percentage = ifelse(Deal_Volume == 0, 0, Office_Percentage),
+    Retail_Percentage = ifelse(Deal_Volume == 0, 0, Retail_Percentage),
+    Other_Percentage = ifelse(Deal_Volume == 0, 0, Other_Percentage)
   )
-
 # Step 7: Perform row-wise updates
 d_aggregated <- d_aggregated %>%
   rowwise() %>%
@@ -217,9 +231,6 @@ d_aggregated <- d_aggregated %>%
     )
   ) %>%
   ungroup()
-
-
-
 ```
 ```{r}
 library(zoo)
@@ -287,13 +298,15 @@ d_aggregated <- d_aggregated %>%
   ) %>%
   ungroup()
 
-
+# saveRDS(d_aggregated, "data_for_modeling.rds")
 ```
 
 
 
 
 ```{r}
+df_aggregated <- readRDS("data_for_modeling.rds")
+
 library(INLA)
 # Step 2: Prepare Data for LASSO
 # Convert categorical variables to factors
