@@ -311,15 +311,7 @@ d_aggregated <- d_aggregated %>%
 
 
 ```{r}
-# ------------------------------
-# Step 1: Load Necessary Libraries
-# ------------------------------
-
-# Install necessary packages if not already installed
-# Uncomment the following lines to install packages
-# install.packages(c("dplyr", "glmnet", "INLA", "ggplot2", "tidyr", "car", "sf", "ggmap"))
-
-# Load libraries
+# Load Required Libraries
 library(dplyr)
 library(glmnet)
 library(INLA)
@@ -328,19 +320,18 @@ library(tidyr)
 library(car)    # For VIF
 library(sf)     # For spatial data handling
 library(ggmap)  # For enhanced spatial plots
+library(tmaptools)  # For geocode_OSM
 
 # ------------------------------
-# Step 2: Load and Initialize Data
+# Step 1: Load and Initialize Data
 # ------------------------------
-
-# Load the aggregated data
-d_aggregated <- readRDS("data_for_modeling.rds")
-
+d_aggregated <- readRDS("data_for_modeling_with_coords.rds")
+d_aggregated
 # Create a new dataframe for modeling to preserve the original data
 d_modeling <- d_aggregated
 
 # ------------------------------
-# Step 3: Data Preparation
+# Step 2: Data Preparation
 # ------------------------------
 
 # Define all numeric columns based on dataset structure (columns 5 to 57)
@@ -349,236 +340,200 @@ all_numeric_columns <- names(d_modeling)[4:57]
 # Exclude latitude and longitude from numeric columns
 numeric_columns <- setdiff(all_numeric_columns, c("lat.census.town", "lon.census.town"))
 
-# Define numeric predictors (excluding lat/lon, Period, and Town)
-# Assuming 'Period' and 'Town' are not among columns 5:57, else adjust accordingly
-numeric_predictors <- numeric_columns
-
 # Convert categorical variables to factors
 d_modeling <- d_modeling %>%
   mutate(
     Town = as.factor(Town),
-    Period = as.factor(Period)  # Convert to factor if treated as categorical
+    Period = as.factor(Period)  # Convert to factor if categorical
   )
 
+# Remove rows with NA in numeric predictors
 na_rows <- d_modeling %>%
-  select(all_of(numeric_predictors)) %>%
+  select(all_of(numeric_columns)) %>%
   apply(1, function(x) any(is.na(x)))
 
 d_modeling <- d_modeling[!na_rows, ]
-# If Period represents dates, convert to Date type and create a numeric time variable
-# Uncomment and adjust the following if necessary
-# d_modeling <- d_modeling %>%
-#   mutate(
-#     Period = as.Date(Period, format = "%Y-%m-%d"),
-#     Period_numeric = as.numeric(Period - min(Period)) / 30  # Example: months since start
-#   )
 
-# Alternatively, if Period is already ordered or categorical, create a numeric index
+# Create a numeric time variable if Period is categorical
 d_modeling <- d_modeling %>%
   arrange(Period) %>%
   mutate(Period_numeric = as.numeric(as.factor(Period)))
-d_modeling %>% select(Period_numeric)
-# Apply normalization (scaling) to numeric predictors
+
+# Scale numeric predictors
 d_modeling <- d_modeling %>%
-  mutate(across(all_of(numeric_predictors), scale, .names = "{.col}_scaled"))
+  mutate(across(all_of(numeric_columns), scale, .names = "{.col}_scaled"))
 
-# ------------------------------
-# Step 4: LASSO Regression for Variable Selection
-# ------------------------------
-
-# Define response variable
+# Define the response variable
 y <- d_modeling$Deal_Volume
 
-# Create model matrix for LASSO without intercept and excluding lat/lon, Period, and Town
-# Ensure that only scaled numeric predictors and Opportunity_Zone are included
+# ------------------------------
+# Step 3: LASSO Regression for Variable Selection
+# ------------------------------
+
 X <- model.matrix(
-  ~ . -1,  # Include all variables without intercept
+  ~ . -1,
   data = d_modeling %>%
     select(ends_with("_scaled"), Opportunity_Zone)
 )
 
-
-
-dim(X)
-dim(d_modeling)
-
-# Calculate correlation matrix
-correlation_matrix <- cor(d_modeling %>% select(ends_with("_scaled")))
-
-# Visualize correlation matrix
-library(corrplot)
-corrplot::corrplot(correlation_matrix, method = "color", type = "upper", tl.cex = 0.6)
-
-
-# Perform LASSO Regression using cross-validation to find optimal lambda
-lasso_model <- cv.glmnet(X, y, alpha = 1, family = "poisson")  # LASSO for variable selection
-
-plot(lasso_model)
-
-# Additionally, plot the coefficient paths
-plot(lasso_model$glmnet.fit, xvar = "lambda", label = TRUE)
-abline(v = log(lasso_model$lambda.min), col = "red", lty = 2)
-abline(v = log(lasso_model$lambda.1se), col = "blue", lty = 2)
-legend("topright", legend = c("lambda.min", "lambda.1se"),
-       col = c("red", "blue"), lty = 2, cex = 0.8)
-
-
-# Extract coefficients at the optimal lambda
-lasso_coefficients <- coef(lasso_model, s = "lambda.1se")  # Coefficients at optimal lambda
-
-# Extract selected predictors (excluding the intercept)
-# Convert sparse matrix to standard matrix
+lasso_model <- cv.glmnet(X, y, alpha = 1, family = "poisson")
+lasso_coefficients <- coef(lasso_model, s = "lambda.1se")
 coefficients_matrix <- as.matrix(lasso_coefficients)
-# Identify non-zero coefficients
 non_zero_indices <- which(coefficients_matrix != 0)
-
-# Extract predictor names (rownames)
 selected_predictors <- rownames(coefficients_matrix)[non_zero_indices]
-
-# Remove the intercept if present
 selected_predictors <- selected_predictors[selected_predictors != "(Intercept)"]
 
-
-print(selected_predictors)
-cat("Number of Selected Predictors:", length(selected_predictors))
-
 # ------------------------------
-# Step 5: Spatio-Temporal Modeling Using INLA
+# Step 4: Consolidation of Predictors
 # ------------------------------
-
-# Define spatial coordinates (ensure they are unique)
-coords <- d_modeling %>%
-  select(lon.census.town, lat.census.town) %>%
-  drop_na() %>%             # Remove rows with NA in either longitude or latitude
-  distinct() %>%            # Ensure coordinates are unique
-  as.matrix() 
-
-# Create spatial mesh
-mesh <- inla.mesh.2d(loc = coords, max.edge = c(0.1, 0.5), cutoff = 0.05)
-
-# Define spatial field with a Matern covariance function
-spde <- inla.spde2.pcmatern(
-  mesh = mesh,
-  alpha = 2,  # Smoothness parameter
-  prior.range = c(0.1, 0.5),  # Prior for spatial range (mean = 0.1, probability = 0.5)
-  prior.sigma = c(1, 0.1)     # Prior for marginal standard deviation (mean = 1, probability = 0.1)
-)
-
-# Create spatial index
-spatial_index <- inla.spde.make.index("spatial.field", n.spde = spde$n.spde)
-
-# Create projector matrix
-A <- inla.spde.make.A(mesh, loc = coords)
-
-# Extract selected predictors for modeling
-predictor_data <- d_modeling %>%
-  select(all_of(selected_predictors))
 
 d_modeling <- d_modeling %>%
   mutate(
-    Town = as.factor(Town),
-    Period = as.factor(Period)  # Convert to factor if treated as categorical
+    Car_scaled = Estimate.Car..truck..or.van....carpooled_scaled,
+    Other_Transportation_scaled = Estimate.Public.transportation..excluding.taxicab._scaled + Estimate.Walked_scaled,
+    Children_scaled = Estimate.Own.children.under.6.years_scaled + Estimate.Own.children.6.to.17.years_scaled,
+    Corporate_scaled = Estimate.Sales.and.office.occupations_scaled +
+      Estimate.Information_scaled +
+      Estimate.Finance.and.insurance..and.real.estate.and.rental.and.leasing_scaled +
+      Estimate.Public.administration_scaled,
+    Blue_Collar_scaled = Estimate.Natural.resources..construction..and.maintenance.occupations_scaled +
+      Estimate.Production..transportation..and.material.moving.occupations_scaled +
+      Estimate.Agriculture..forestry..fishing.and.hunting..and.mining_scaled +
+      Estimate.Manufacturing_scaled +
+      Estimate.Retail.trade_scaled +
+      Estimate.Transportation.and.warehousing..and.utilities_scaled,
+    Other_Services_scaled = Estimate.Educational.services..and.health.care.and.social.assistance_scaled +
+      Estimate.Arts..entertainment..and.recreation..and.accommodation.and.food.services_scaled +
+      Estimate.Other.services..except.public.administration_scaled +
+      Estimate.Self.employed.in.own.not.incorporated.business.workers_scaled,
+    Govt_Benefits_scaled = Estimate.With.Social.Security_scaled +
+      Estimate.With.retirement.income_scaled +
+      Estimate.With.Supplemental.Security.Income_scaled,
+    Welfare_Benefits_scaled = Estimate.With.cash.public.assistance.income_scaled +
+      Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months_scaled
   )
 
-# Build INLA stack
+# Consolidated Predictor Names
+consolidated_predictors <- c(
+  "Car_scaled", "Other_Transportation_scaled", "Children_scaled",
+  "Corporate_scaled", "Blue_Collar_scaled", "Other_Services_scaled",
+  "Govt_Benefits_scaled", "Welfare_Benefits_scaled"
+)
+
+# Other Predictors to Keep
+other_predictors <- c(
+  "Avg_Deal_Size_scaled", "Total_Size_Sq_Ft_scaled", "Fed_Rate_scaled",
+  "Unemployment_Rate_scaled", "HomeValue_scaled", "Estimate.Worked.at.home_scaled",
+  "Estimate.Mean.travel.time.to.work..minutes._scaled",
+  "Estimate.Unpaid.family.workers_scaled", "Estimate.Median.household.income..dollars._scaled",
+  "Estimate.With.health.insurance.coverage..With.private.health.insurance_scaled",
+  "Estimate.No.health.insurance.coverage_scaled", "Opportunity_Zone_scaled",
+  "Residential_Percentage_scaled", "Industrial_Percentage_scaled",
+  "Office_Percentage_scaled", "Retail_Percentage_scaled", "Other_Percentage_scaled"
+)
+
+# Final Predictors for Modeling
+final_predictors <- c(other_predictors, consolidated_predictors)
+
+# ------------------------------
+# Step 5: Spatial Projection and Mesh Construction
+# ------------------------------
+
+# Prepare spatial data
+d_modeling <- d_modeling %>%
+  drop_na(lon.census.town, lat.census.town)
+
+d_sf <- st_as_sf(d_modeling, coords = c("lon.census.town", "lat.census.town"), crs = 4326)
+d_projected <- st_transform(d_sf, crs = 3310)
+projected_coords <- st_coordinates(d_projected)
+
+# Unique Town Coordinates
+town_coords_unique <- d_projected %>%
+  as.data.frame() %>%
+  distinct(Town, .keep_all = TRUE)
+
+coords <- as.matrix(st_coordinates(st_as_sf(town_coords_unique, crs = 3310)))
+
+# Mesh Creation
+mesh <- inla.mesh.2d(
+  loc = coords,
+  max.edge = c(50000, 200000),
+  cutoff = 5000
+)
+
+
+# SPDE Model
+spde <- inla.spde2.pcmatern(
+  mesh = mesh,
+  alpha = 2,
+  prior.range = c(50000, 0.5),
+  prior.sigma = c(1, 0.1)
+)
+
+# Create Spatial Index
+spatial_index <- inla.spde.make.index("spatial.field", n.spde = spde$n.spde)
+
+# Assign Spatial Indices to Towns
+town_to_index <- data.frame(
+  Town = town_coords_unique$Town,
+  coord_index = 1:nrow(town_coords_unique)
+)
+
+d_modeling <- d_modeling %>%
+  left_join(town_to_index, by = "Town")
+
+A <- inla.spde.make.A(mesh, loc = coords[d_modeling$coord_index, ])
+# ------------------------------
+# Step 6: INLA Model
+# ------------------------------
+
+# Prepare Data for INLA Stack
+predictor_data <- d_modeling %>%
+  select(all_of(final_predictors))
+
+covariate_data <- data.frame(
+  predictor_data,
+  Period = d_modeling$Period,
+  Town = d_modeling$Town
+)
+
 stack <- inla.stack(
   data = list(y = y),
   A = list(A, 1),
   effects = list(
     spatial.field = spatial_index,
-    predictor_data,
-    # Include Period and Town as separate effects if needed
-    list(Period = d_modeling$Period),
-    list(Town = d_modeling$Town)
+    covariate_data
   )
+  tag = "data"
 )
 
-# Define the spatio-temporal model formula
-# Include:
-# - Spatial field
-# - Temporal autocorrelation via Period_numeric
-# - Fixed effects for selected predictors
-# - Optional: Random effects for Town if not captured by spatial.field
-# Note: Since spatial.field captures spatial dependencies, Town may not need to be included separately
-# However, if Town has additional random effects, include it as a separate term
+# Create INLA Formula
+all_predictors_str <- paste(final_predictors, collapse = " + ")
+formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", all_predictors_str)
+formula <- as.formula(formula_str)
 
-formula <- y ~ 
-  f(spatial.field, model = spde) +          # Continuous spatial field
-  f(Period, model = "ar1") +                # Temporal autocorrelation
-  .                                         # Include all selected predictors as fixed effects
-
-# **Note:** 
-# - The `.` in the formula includes all fixed effects from `predictor_data`.
-# - `Period` is modeled with an AR1 structure to capture temporal autocorrelation.
-# - If `Town` needs to be modeled separately (e.g., as a random effect), it can be added as follows:
-#   + f(Town, model = "iid")  # Random effect for Town
-# However, if spatial.field sufficiently captures spatial variation, this may not be necessary.
-
-# Fit the INLA model
+# Fit the INLA Model
 result <- inla(
   formula,
   data = inla.stack.data(stack),
-  family = "poisson",  # Assuming count data for deal volume
+  family = "poisson",
   control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-  control.compute = list(dic = TRUE, waic = TRUE)  # Compute model metrics
+  control.compute = list(dic = TRUE, waic = TRUE)
 )
+plot(result)
+# ------------------------------
+# Step 7: Diagnostics and Visualization
+# ------------------------------
 
-# Display model summary
 summary(result)
-
-# ------------------------------
-# Step 6: Visualizations
-# ------------------------------
-
-# Temporal Trends Visualization
-agg_data <- d_modeling %>%
-  group_by(Period, Opportunity_Zone) %>%
-  summarise(Total_Deals = sum(Deal_Volume, na.rm = TRUE), .groups = 'drop')
-
-ggplot(agg_data, aes(x = as.Date(Period), y = Total_Deals, color = Opportunity_Zone)) +
-  geom_line() +
-  labs(title = "Aggregated Deal Volume Over Time by Opportunity Zone",
-       x = "Time",
-       y = "Total Deals",
-       color = "Opportunity Zone") +
-  theme_minimal()
-
-# Spatial Trends Visualization with Enhanced Features
-# Convert data to sf object for spatial plotting
-d_sf <- st_as_sf(d_modeling, coords = c("lon.census.town", "lat.census.town"), crs = 4326)
-
-# Optionally, obtain a basemap using ggmap (requires API key)
-# Uncomment and set your API key if you wish to use ggmap
-# register_google(key = "YOUR_GOOGLE_MAPS_API_KEY")
-# california_map <- get_map(location = "California", zoom = 6)
-
-ggplot() +
-  # Uncomment the following line if you have a basemap
-  # geom_map(data = california_map, map = california_map, aes(x = lon, y = lat, map_id = id), fill = "white", color = "black", alpha = 0.5) +
-  geom_sf(data = d_sf, aes(color = Unemployment_Rate, size = Deal_Volume), alpha = 0.7) +
-  scale_color_viridis_c() +
-  labs(title = "Spatial Distribution of Deal Volume and Unemployment Rate",
-       x = "Longitude",
-       y = "Latitude",
-       size = "Total Deals",
-       color = "Unemployment Rate") +
-  theme_minimal()
-
-# ------------------------------
-# Step 7: Model Diagnostics
-# ------------------------------
-
-# Check for Multicollinearity among Selected Predictors using VIF
-# Note: VIF is typically used for linear models; interpret with caution for count models
-lm_model <- lm(Deal_Volume ~ ., data = d_modeling %>% select(all_of(selected_predictors, "Deal_Volume")))
-vif_values <- vif(lm_model)
-print("Variance Inflation Factor (VIF) for Selected Predictors:")
-print(vif_values)
-
-# Optional: Remove predictors with high VIF (>5 or 10) and refit LASSO/INLA if necessary
-
-# Posterior Predictive Checks: Compare Observed vs Fitted Values
 fitted_values <- result$summary.fitted.values$mean
+
+# Extract fitted values for observations in the stack
+fitted_values <- result$summary.fitted.values$mean[inla.stack.index(stack, tag = "data")$data]
+
+?inla.stack.index
+
+
 ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = Fitted)) +
   geom_point(alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, color = "red") +
@@ -587,63 +542,27 @@ ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = F
        y = "Fitted Deal Volume") +
   theme_minimal()
 
-# Residuals Analysis
-residuals <- y - fitted_values
-ggplot(data.frame(Residuals = residuals), aes(x = Residuals)) +
-  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
-  labs(title = "Residuals Distribution",
-       x = "Residuals",
-       y = "Frequency") +
-  theme_minimal()
-
-# Dispersion Check for Overdispersion
-dispersion_ratio <- sum(residuals^2) / length(residuals)
-print(paste("Dispersion Ratio:", round(dispersion_ratio, 2)))
-
-# If dispersion_ratio > 1.5, consider using Negative Binomial
-if (dispersion_ratio > 1.5) {
-  result_nb <- inla(
-    formula,
-    data = inla.stack.data(stack),
-    family = "nbinomial",  # Negative Binomial family
-    control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-    control.compute = list(dic = TRUE, waic = TRUE)
-  )
-  
-  # Display summary of Negative Binomial model
-  summary(result_nb)
-  
-  # Compare Model Metrics
-  print("Negative Binomial Model Summary:")
-  print(summary(result_nb))
-}
-
-# ------------------------------
-# Step 8: Additional Enhancements (Optional)
-# ------------------------------
-
-# Example: Visualizing Fixed Effects with Confidence Intervals
-fixed_effects <- result$summary.fixed
-fixed_effects_df <- as.data.frame(fixed_effects)
-fixed_effects_df$Predictor <- rownames(fixed_effects_df)
-
-ggplot(fixed_effects_df, aes(x = reorder(Predictor, mean), y = mean)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = `0.025quant`, ymax = `0.975quant`), width = 0.2) +
-  coord_flip() +
-  labs(title = "Fixed Effects Estimates",
-       x = "Predictors",
-       y = "Effect Size") +
-  theme_minimal()
-
-# ------------------------------
-# Step 9: Review Column Names (Optional)
-# ------------------------------
-
-# Display column names of the modeling dataframe
-print("Column Names of d_modeling:")
-print(colnames(d_modeling))
-
 ```
+Some Visualizations
+```{r}
+fixed_names <- names(result$summary.fixed)
 
+# Plotting posterior marginals for each fixed effect
+for (fn in fixed_names) {
+  # Marginal distribution of this fixed effect
+  marginal <- result$marginals.fixed[[fn]]
+  
+  # Plot using base R
+  plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
+       xlab = fn, ylab = "Density")
+  
+  # Alternatively, you can compute credible intervals:
+  ci_low <- inla.qmarginal(0.025, marginal)
+  ci_high <- inla.qmarginal(0.975, marginal)
+  abline(v = c(ci_low, ci_high), col = "red", lty = 2)
+  
+  # You can also print the mean, etc.
+  cat(fn, "Mean:", inla.emarginal(function(x) x, marginal), "\n")
+}
+```
 
