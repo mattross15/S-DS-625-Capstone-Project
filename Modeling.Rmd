@@ -321,20 +321,19 @@ library(car)    # For VIF
 library(sf)     # For spatial data handling
 library(ggmap)  # For enhanced spatial plots
 library(tmaptools)  # For geocode_OSM
+library(gridExtra)   # For grid.arrange if needed
 
 # ------------------------------
 # Step 1: Load and Initialize Data
 # ------------------------------
 d_aggregated <- readRDS("data_for_modeling_with_coords.rds")
-d_aggregated
-# Create a new dataframe for modeling to preserve the original data
 d_modeling <- d_aggregated
 
 # ------------------------------
 # Step 2: Data Preparation
 # ------------------------------
 
-# Define all numeric columns based on dataset structure (columns 5 to 57)
+# Define numeric columns (columns 5 to 57 in original data)
 all_numeric_columns <- names(d_modeling)[4:57]
 
 # Exclude latitude and longitude from numeric columns
@@ -351,10 +350,9 @@ d_modeling <- d_modeling %>%
 na_rows <- d_modeling %>%
   select(all_of(numeric_columns)) %>%
   apply(1, function(x) any(is.na(x)))
-
 d_modeling <- d_modeling[!na_rows, ]
 
-# Create a numeric time variable if Period is categorical
+# Create numeric time variable if Period is categorical
 d_modeling <- d_modeling %>%
   arrange(Period) %>%
   mutate(Period_numeric = as.numeric(as.factor(Period)))
@@ -363,7 +361,7 @@ d_modeling <- d_modeling %>%
 d_modeling <- d_modeling %>%
   mutate(across(all_of(numeric_columns), scale, .names = "{.col}_scaled"))
 
-# Define the response variable
+# Define response variable
 y <- d_modeling$Deal_Volume
 
 # ------------------------------
@@ -436,10 +434,73 @@ other_predictors <- c(
 final_predictors <- c(other_predictors, consolidated_predictors)
 
 # ------------------------------
-# Step 5: Spatial Projection and Mesh Construction
+# Step 5: OPTIONAL MODEL SELECTION BASED ON WAIC
+# ------------------------------
+# The following is the forward selection process we discussed. 
+# We will comment it out and just use the best_set from previous analysis.
+#
+# #candidate_predictors <- final_predictors
+# #selected_set <- c()
+# #remaining_set <- candidate_predictors
+# #
+# #best_waic <- Inf
+# #best_model <- NULL
+# #best_set <- NULL
+# #
+# #while (length(remaining_set) > 0) {
+# #  improvement <- FALSE
+# #  predictor_to_add <- NULL
+# #
+# #  for (p in remaining_set) {
+# #    current_set <- c(selected_set, p)
+# #    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
+# #    formula <- as.formula(formula_str)
+# #
+# #    result_temp <- inla(
+# #      formula,
+# #      data = inla.stack.data(stack),
+# #      family = "poisson",
+# #      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+# #      control.compute = list(dic = TRUE, waic = TRUE)
+# #    )
+# #
+# #    waic_val <- result_temp$waic$waic
+# #
+# #    if (waic_val < best_waic) {
+# #      best_waic <- waic_val
+# #      best_model <- result_temp
+# #      best_set <- current_set
+# #      improvement <- TRUE
+# #      predictor_to_add <- p
+# #    }
+# #  }
+# #
+# #  if (improvement) {
+# #    selected_set <- best_set
+# #    remaining_set <- setdiff(candidate_predictors, selected_set)
+# #  } else {
+# #    break
+# #  }
+# #}
+#
+# # After running the process once, we have a known best_set:
+best_set <- c(
+ "Residential_Percentage_scaled", "Industrial_Percentage_scaled",
+ "Office_Percentage_scaled", "Other_Percentage_scaled",
+ "Retail_Percentage_scaled", "Estimate.Worked.at.home_scaled",
+ "Welfare_Benefits_scaled", "Other_Services_scaled",
+ "Govt_Benefits_scaled", "Estimate.No.health.insurance.coverage_scaled",
+ "Estimate.Unpaid.family.workers_scaled", "Fed_Rate_scaled",
+ "Total_Size_Sq_Ft_scaled", "HomeValue_scaled",
+ "Estimate.Mean.travel.time.to.work..minutes._scaled", "Opportunity_Zone_scaled"
+)
+
+# Now you can just use `best_set` in your final modeling step without re-running model selection.
+
+# ------------------------------
+# Step 6: Spatial Projection and Mesh Construction
 # ------------------------------
 
-# Prepare spatial data
 d_modeling <- d_modeling %>%
   drop_na(lon.census.town, lat.census.town)
 
@@ -447,22 +508,18 @@ d_sf <- st_as_sf(d_modeling, coords = c("lon.census.town", "lat.census.town"), c
 d_projected <- st_transform(d_sf, crs = 3310)
 projected_coords <- st_coordinates(d_projected)
 
-# Unique Town Coordinates
 town_coords_unique <- d_projected %>%
   as.data.frame() %>%
   distinct(Town, .keep_all = TRUE)
 
 coords <- as.matrix(st_coordinates(st_as_sf(town_coords_unique, crs = 3310)))
 
-# Mesh Creation
 mesh <- inla.mesh.2d(
   loc = coords,
   max.edge = c(50000, 200000),
   cutoff = 5000
 )
 
-
-# SPDE Model
 spde <- inla.spde2.pcmatern(
   mesh = mesh,
   alpha = 2,
@@ -470,10 +527,8 @@ spde <- inla.spde2.pcmatern(
   prior.sigma = c(1, 0.1)
 )
 
-# Create Spatial Index
 spatial_index <- inla.spde.make.index("spatial.field", n.spde = spde$n.spde)
 
-# Assign Spatial Indices to Towns
 town_to_index <- data.frame(
   Town = town_coords_unique$Town,
   coord_index = 1:nrow(town_coords_unique)
@@ -483,13 +538,13 @@ d_modeling <- d_modeling %>%
   left_join(town_to_index, by = "Town")
 
 A <- inla.spde.make.A(mesh, loc = coords[d_modeling$coord_index, ])
+
 # ------------------------------
-# Step 6: INLA Model
+# Step 7: Model Fitting Using Best Set
 # ------------------------------
 
-# Prepare Data for INLA Stack
 predictor_data <- d_modeling %>%
-  select(all_of(final_predictors))
+  select(all_of(best_set))
 
 covariate_data <- data.frame(
   predictor_data,
@@ -503,66 +558,170 @@ stack <- inla.stack(
   effects = list(
     spatial.field = spatial_index,
     covariate_data
-  )
+  ),
   tag = "data"
 )
 
-# Create INLA Formula
-all_predictors_str <- paste(final_predictors, collapse = " + ")
-formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", all_predictors_str)
+all_best_str <- paste(best_set, collapse = " + ")
+formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", all_best_str)
 formula <- as.formula(formula_str)
 
-# Fit the INLA Model
-result <- inla(
+best_result <- inla(
   formula,
   data = inla.stack.data(stack),
   family = "poisson",
   control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
   control.compute = list(dic = TRUE, waic = TRUE)
 )
-plot(result)
-# ------------------------------
-# Step 7: Diagnostics and Visualization
-# ------------------------------
 
-summary(result)
-fitted_values <- result$summary.fitted.values$mean
+plot(best_result)
+summary(best_result)
 
-# Extract fitted values for observations in the stack
-fitted_values <- result$summary.fitted.values$mean[inla.stack.index(stack, tag = "data")$data]
-
-?inla.stack.index
-
+# Extract fitted values
+fitted_values <- best_result$summary.fitted.values$mean[inla.stack.index(stack, tag = "data")$data]
 
 ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = Fitted)) +
   geom_point(alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, color = "red") +
-  labs(title = "Observed vs Fitted Deal Volume",
+  labs(title = "Observed vs Fitted Deal Volume - Best Model",
        x = "Observed Deal Volume",
        y = "Fitted Deal Volume") +
   theme_minimal()
 
 ```
+
+```{r}
+# Assuming 'final_predictors' is defined and all previous steps up to stack creation are done
+
+# Initialize variables for model selection
+candidate_predictors <- final_predictors
+selected_set <- c()
+remaining_set <- candidate_predictors
+
+best_waic <- Inf
+best_model <- NULL
+best_set <- NULL
+
+# Forward selection loop
+while (length(remaining_set) > 0) {
+  improvement <- FALSE
+  predictor_to_add <- NULL
+  
+  for (p in remaining_set) {
+    # Create formula with current candidate predictor added
+    current_set <- c(selected_set, p)
+    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
+    formula <- as.formula(formula_str)
+    
+    # Fit model with current set of predictors
+    result_temp <- inla(
+      formula,
+      data = inla.stack.data(stack),
+      family = "poisson",
+      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+      control.compute = list(dic = TRUE, waic = TRUE)
+    )
+    
+    # Extract WAIC
+    waic_val <- result_temp$waic$waic
+    
+    # Check if this model is an improvement
+    if (waic_val < best_waic) {
+      best_waic <- waic_val
+      best_model <- result_temp
+      best_set <- current_set
+      improvement <- TRUE
+      predictor_to_add <- p
+    }
+  }
+  
+  if (improvement) {
+    # Update the selected set and remove the chosen predictor from the remaining set
+    selected_set <- best_set
+    remaining_set <- setdiff(candidate_predictors, selected_set)
+  } else {
+    # No improvement by adding any remaining predictor, stop selection
+    break
+  }
+}
+
+# After the loop, best_model and best_set correspond to the chosen model/predictors
+cat("Best Model WAIC:", best_waic, "\n")
+cat("Selected Predictors:", paste(best_set, collapse = ", "), "\n")
+
+length(best_set)
+
+length(final_predictors)
+# best_model now contains the INLA result for the chosen model
+summary(best_model)
+
+```
+
 Some Visualizations
 ```{r}
-fixed_names <- names(result$summary.fixed)
+# Create the projector for the mesh
+gproj <- inla.mesh.projector(mesh, dims = c(300, 300))  # Adjust dims for resolution
+# Project the mean and standard deviation of the spatial field
+g.mean <- inla.mesh.project(gproj, result$summary.random$spatial.field$mean)
+g.sd <- inla.mesh.project(gproj, result$summary.random$spatial.field$sd)
 
-# Plotting posterior marginals for each fixed effect
-for (fn in fixed_names) {
-  # Marginal distribution of this fixed effect
-  marginal <- result$marginals.fixed[[fn]]
-  
-  # Plot using base R
-  plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
-       xlab = fn, ylab = "Density")
-  
-  # Alternatively, you can compute credible intervals:
-  ci_low <- inla.qmarginal(0.025, marginal)
-  ci_high <- inla.qmarginal(0.975, marginal)
-  abline(v = c(ci_low, ci_high), col = "red", lty = 2)
-  
-  # You can also print the mean, etc.
-  cat(fn, "Mean:", inla.emarginal(function(x) x, marginal), "\n")
-}
+
+library(lattice)
+library(gridExtra)
+
+grid.arrange(
+  levelplot(
+    g.mean, scales = list(draw = FALSE), xlab = '', ylab = '',
+    main = 'Spatial Field Mean', col.regions = viridis::viridis(16)
+  ),
+  levelplot(
+    g.sd, scales = list(draw = FALSE), xlab = '', ylab = '',
+    main = 'Spatial Field SD', col.regions = viridis::viridis(16)
+  ),
+  nrow = 1
+)
+# Convert projection results to data frames for ggplot2
+mean_df <- data.frame(
+  x = rep(gproj$x, each = length(gproj$y)),
+  y = rep(gproj$y, times = length(gproj$x)),
+  value = as.vector(g.mean)
+)
+
+sd_df <- data.frame(
+  x = rep(gproj$x, each = length(gproj$y)),
+  y = rep(gproj$y, times = length(gproj$x)),
+  value = as.vector(g.sd)
+)
+
+
+png("spatial_field_mean.png", width = 800, height = 600)
+ggplot(mean_df, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Spatial Field Mean",
+    x = "Longitude",
+    y = "Latitude",
+    fill = "Latent Effect"
+  ) +
+  theme_minimal()
+dev.off()
+
+# Plot the mean
+
+
+# Plot the standard deviation
+png("spatial_field_sd.png", width = 800, height = 600)
+ggplot(sd_df, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Spatial Field SD",
+    x = "Longitude",
+    y = "Latitude",
+    fill = "Latent Effect"
+  ) +
+  theme_minimal()
+
 ```
 
