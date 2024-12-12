@@ -591,69 +591,6 @@ ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = F
 ```
 
 ```{r}
-# Assuming 'final_predictors' is defined and all previous steps up to stack creation are done
-
-# Initialize variables for model selection
-candidate_predictors <- final_predictors
-selected_set <- c()
-remaining_set <- candidate_predictors
-
-best_waic <- Inf
-best_model <- NULL
-best_set <- NULL
-
-# Forward selection loop
-while (length(remaining_set) > 0) {
-  improvement <- FALSE
-  predictor_to_add <- NULL
-  
-  for (p in remaining_set) {
-    # Create formula with current candidate predictor added
-    current_set <- c(selected_set, p)
-    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
-    formula <- as.formula(formula_str)
-    
-    # Fit model with current set of predictors
-    result_temp <- inla(
-      formula,
-      data = inla.stack.data(stack),
-      family = "poisson",
-      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-      control.compute = list(dic = TRUE, waic = TRUE)
-    )
-    
-    # Extract WAIC
-    waic_val <- result_temp$waic$waic
-    
-    # Check if this model is an improvement
-    if (waic_val < best_waic) {
-      best_waic <- waic_val
-      best_model <- result_temp
-      best_set <- current_set
-      improvement <- TRUE
-      predictor_to_add <- p
-    }
-  }
-  
-  if (improvement) {
-    # Update the selected set and remove the chosen predictor from the remaining set
-    selected_set <- best_set
-    remaining_set <- setdiff(candidate_predictors, selected_set)
-  } else {
-    # No improvement by adding any remaining predictor, stop selection
-    break
-  }
-}
-
-# After the loop, best_model and best_set correspond to the chosen model/predictors
-cat("Best Model WAIC:", best_waic, "\n")
-cat("Selected Predictors:", paste(best_set, collapse = ", "), "\n")
-
-length(best_set)
-
-length(final_predictors)
-# best_model now contains the INLA result for the chosen model
-summary(best_model)
 
 ```
 
