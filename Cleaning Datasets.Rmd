@@ -60,7 +60,6 @@ ca$`Asset Cities` <- gsub(",.*", "", ca$`Asset Cities`)
 unique(ca$`Asset Cities`)
 ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
 
-
 ```
 
 ```{r}
@@ -110,6 +109,7 @@ bls$Date <- as.Date(paste(bls$Year, bls$Month, "01", sep="-"), format = "%Y-%m-%
 
 bls <- bls %>%
   select(Area, 'Civilian Labor Force', Employment, Unemployment, 'Unemployment Rate', Date)
+
 ```
 # Fed Interest Rates
 ```{r}
@@ -123,6 +123,8 @@ fed <- fed %>%
   )
 
 head(fed)
+
+# write.csv(fed, "fed_cleaned.csv")
 ```
 # Zillow Data
 ```{r}
@@ -229,7 +231,7 @@ acs <- acs_selected
 acs$`Geographic Area Name` <- gsub("city,.*", "", acs$`Geographic Area Name`)
 acs$`Geographic Area Name` <- gsub("CDP.*", "", acs$`Geographic Area Name`)
 acs$`Geographic Area Name` <- gsub("town.*", "", acs$`Geographic Area Name`)
-head(acs)
+
 ```
 
 # Opportunity Zone Data
@@ -239,7 +241,6 @@ library(tidycensus)
 library(sf)
 opp <- read.csv("/Users/mross/Downloads/Opportunity_Zones_-5617125383102974896.csv")
 opp <- opp[opp$STUSAB == "CA", ]
-
 
 opp_sf <- st_read("/Users/mross/Downloads/Opportunity_Zones_6143711553447977475/Opportunity_Zones.shp")
 
@@ -283,7 +284,7 @@ df <- NULL
 df$Town <- unique(acs$`Geographic Area Name`)
 df$Town <- trimws(df$Town)
 
-months <- seq(as.Date("2010-01-01"), as.Date("2023-06-01"), by = "month")
+months <- seq(as.Date("2010-01-01"), as.Date("2024-06-01"), by = "month")
 df <- expand.grid(Town = df$Town, Date = months)
 head(df)
 
@@ -339,6 +340,7 @@ z_home_value_unique <- z_home_value %>%
   group_by(City, Date) %>%
   summarize(HomeValue = mean(HomeValue, na.rm = TRUE), .groups = "drop")
 
+write.csv(z_home_value_unique, "z_home_value_unique.csv")
 # Now perform the left join
 df <- df %>%
   left_join(z_home_value_unique, by = c("Town" = "City", "Date" = "Date"))
@@ -414,9 +416,9 @@ df <- df %>%
 ca <- ca %>%
   mutate(Year_Month = format(as.Date(`Deal Date`), "%Y-%m"))
 
-# Filter ca for dates between 2010 and June 2023
+# Filter ca for dates between 2010 and Jan 2024
 ca <- ca %>%
-  filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2023-06-01")
+  filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2024-01-01")
 
 dim(ca)
 

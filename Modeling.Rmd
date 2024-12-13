@@ -411,6 +411,71 @@ d_modeling <- d_modeling %>%
       Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months_scaled
   )
 
+# Add derived predictors on the raw scale
+d_modeling <- d_modeling %>%
+  mutate(
+    Car_raw = Estimate.Car..truck..or.van....carpooled_scaled * sd(Estimate.Car..truck..or.van....carpooled) + mean(Estimate.Car..truck..or.van....carpooled),
+    Other_Transportation_raw = 
+      (Estimate.Public.transportation..excluding.taxicab._scaled * sd(Estimate.Public.transportation..excluding.taxicab.) + 
+         mean(Estimate.Public.transportation..excluding.taxicab.)) +
+      (Estimate.Walked_scaled * sd(Estimate.Walked) + mean(Estimate.Walked)),
+    Children_raw = 
+      (Estimate.Own.children.under.6.years_scaled * sd(Estimate.Own.children.under.6.years) + 
+         mean(Estimate.Own.children.under.6.years)) +
+      (Estimate.Own.children.6.to.17.years_scaled * sd(Estimate.Own.children.6.to.17.years) + 
+         mean(Estimate.Own.children.6.to.17.years)),
+    Corporate_raw = 
+      (Estimate.Sales.and.office.occupations_scaled * sd(Estimate.Sales.and.office.occupations) + 
+         mean(Estimate.Sales.and.office.occupations)) +
+      (Estimate.Information_scaled * sd(Estimate.Information) + mean(Estimate.Information)) +
+      (Estimate.Finance.and.insurance..and.real.estate.and.rental.and.leasing_scaled * 
+         sd(Estimate.Finance.and.insurance..and.real.estate.and.rental.and.leasing) +
+         mean(Estimate.Finance.and.insurance..and.real.estate.and.rental.and.leasing)) +
+      (Estimate.Public.administration_scaled * sd(Estimate.Public.administration) + mean(Estimate.Public.administration)),
+    Blue_Collar_raw = 
+      (Estimate.Natural.resources..construction..and.maintenance.occupations_scaled * 
+         sd(Estimate.Natural.resources..construction..and.maintenance.occupations) +
+         mean(Estimate.Natural.resources..construction..and.maintenance.occupations)) +
+      (Estimate.Production..transportation..and.material.moving.occupations_scaled * 
+         sd(Estimate.Production..transportation..and.material.moving.occupations) +
+         mean(Estimate.Production..transportation..and.material.moving.occupations)) +
+      (Estimate.Agriculture..forestry..fishing.and.hunting..and.mining_scaled * 
+         sd(Estimate.Agriculture..forestry..fishing.and.hunting..and.mining) +
+         mean(Estimate.Agriculture..forestry..fishing.and.hunting..and.mining)) +
+      (Estimate.Manufacturing_scaled * sd(Estimate.Manufacturing) + mean(Estimate.Manufacturing)) +
+      (Estimate.Retail.trade_scaled * sd(Estimate.Retail.trade) + mean(Estimate.Retail.trade)) +
+      (Estimate.Transportation.and.warehousing..and.utilities_scaled * 
+         sd(Estimate.Transportation.and.warehousing..and.utilities) +
+         mean(Estimate.Transportation.and.warehousing..and.utilities)),
+    Other_Services_raw = 
+      (Estimate.Educational.services..and.health.care.and.social.assistance_scaled * 
+         sd(Estimate.Educational.services..and.health.care.and.social.assistance) +
+         mean(Estimate.Educational.services..and.health.care.and.social.assistance)) +
+      (Estimate.Arts..entertainment..and.recreation..and.accommodation.and.food.services_scaled * 
+         sd(Estimate.Arts..entertainment..and.recreation..and.accommodation.and.food.services) +
+         mean(Estimate.Arts..entertainment..and.recreation..and.accommodation.and.food.services)) +
+      (Estimate.Other.services..except.public.administration_scaled * 
+         sd(Estimate.Other.services..except.public.administration) +
+         mean(Estimate.Other.services..except.public.administration)) +
+      (Estimate.Self.employed.in.own.not.incorporated.business.workers_scaled * 
+         sd(Estimate.Self.employed.in.own.not.incorporated.business.workers) +
+         mean(Estimate.Self.employed.in.own.not.incorporated.business.workers)),
+    Govt_Benefits_raw = 
+      (Estimate.With.Social.Security_scaled * sd(Estimate.With.Social.Security) + 
+         mean(Estimate.With.Social.Security)) +
+      (Estimate.With.retirement.income_scaled * sd(Estimate.With.retirement.income) + 
+         mean(Estimate.With.retirement.income)) +
+      (Estimate.With.Supplemental.Security.Income_scaled * sd(Estimate.With.Supplemental.Security.Income) + 
+         mean(Estimate.With.Supplemental.Security.Income)),
+    Welfare_Benefits_raw = 
+      (Estimate.With.cash.public.assistance.income_scaled * sd(Estimate.With.cash.public.assistance.income) + 
+         mean(Estimate.With.cash.public.assistance.income)) +
+      (Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months_scaled * 
+         sd(Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months) +
+         mean(Estimate.With.Food.Stamp.SNAP.benefits.in.the.past.12.months))
+  )
+
+
 # Consolidated Predictor Names
 consolidated_predictors <- c(
   "Car_scaled", "Other_Transportation_scaled", "Children_scaled",
@@ -420,7 +485,7 @@ consolidated_predictors <- c(
 
 # Other Predictors to Keep
 other_predictors <- c(
-  "Avg_Deal_Size_scaled", "Total_Size_Sq_Ft_scaled", "Fed_Rate_scaled",
+  "Avg_Deal_Size_scaled", "Fed_Rate_scaled",
   "Unemployment_Rate_scaled", "HomeValue_scaled", "Estimate.Worked.at.home_scaled",
   "Estimate.Mean.travel.time.to.work..minutes._scaled",
   "Estimate.Unpaid.family.workers_scaled", "Estimate.Median.household.income..dollars._scaled",
@@ -436,53 +501,56 @@ final_predictors <- c(other_predictors, consolidated_predictors)
 # ------------------------------
 # Step 5: OPTIONAL MODEL SELECTION BASED ON WAIC
 # ------------------------------
-# The following is the forward selection process we discussed. 
+# The following is the forward selection process we discussed.
 # We will comment it out and just use the best_set from previous analysis.
-#
-# #candidate_predictors <- final_predictors
-# #selected_set <- c()
-# #remaining_set <- candidate_predictors
-# #
-# #best_waic <- Inf
-# #best_model <- NULL
-# #best_set <- NULL
-# #
-# #while (length(remaining_set) > 0) {
-# #  improvement <- FALSE
-# #  predictor_to_add <- NULL
-# #
-# #  for (p in remaining_set) {
-# #    current_set <- c(selected_set, p)
-# #    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
-# #    formula <- as.formula(formula_str)
-# #
-# #    result_temp <- inla(
-# #      formula,
-# #      data = inla.stack.data(stack),
-# #      family = "poisson",
-# #      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-# #      control.compute = list(dic = TRUE, waic = TRUE)
-# #    )
-# #
-# #    waic_val <- result_temp$waic$waic
-# #
-# #    if (waic_val < best_waic) {
-# #      best_waic <- waic_val
-# #      best_model <- result_temp
-# #      best_set <- current_set
-# #      improvement <- TRUE
-# #      predictor_to_add <- p
-# #    }
-# #  }
-# #
-# #  if (improvement) {
-# #    selected_set <- best_set
-# #    remaining_set <- setdiff(candidate_predictors, selected_set)
-# #  } else {
-# #    break
-# #  }
-# #}
-#
+
+# candidate_predictors <- final_predictors
+# selected_set <- c()
+# remaining_set <- candidate_predictors
+# 
+# best_waic <- Inf
+# best_model <- NULL
+# best_set <- NULL
+# 
+# while (length(remaining_set) > 0) {
+#  improvement <- FALSE
+#  predictor_to_add <- NULL
+# 
+#  for (p in remaining_set) {
+#    current_set <- c(selected_set, p)
+#    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
+#    formula <- as.formula(formula_str)
+# 
+#    result_temp <- inla(
+#      formula,
+#      data = inla.stack.data(stack),
+#      family = "poisson",
+#      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+#      control.compute = list(dic = TRUE, waic = TRUE)
+#    )
+# 
+#    waic_val <- result_temp$waic$waic
+# 
+#    if (waic_val < best_waic) {
+#      best_waic <- waic_val
+#      best_model <- result_temp
+#      best_set <- current_set
+#      improvement <- TRUE
+#      predictor_to_add <- p
+#    }
+#  }
+# 
+#  if (improvement) {
+#    selected_set <- best_set
+#    remaining_set <- setdiff(candidate_predictors, selected_set)
+#  } else {
+#    break
+#  }
+# }
+# 
+# print(selected_set)
+
+
 # # After running the process once, we have a known best_set:
 best_set <- c(
  "Residential_Percentage_scaled", "Industrial_Percentage_scaled",
@@ -552,6 +620,8 @@ covariate_data <- data.frame(
   Town = d_modeling$Town
 )
 
+
+
 stack <- inla.stack(
   data = list(y = y),
   A = list(A, 1),
@@ -565,7 +635,7 @@ stack <- inla.stack(
 all_best_str <- paste(best_set, collapse = " + ")
 formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", all_best_str)
 formula <- as.formula(formula_str)
-
+?inla()
 best_result <- inla(
   formula,
   data = inla.stack.data(stack),
@@ -588,10 +658,7 @@ ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = F
        y = "Fitted Deal Volume") +
   theme_minimal()
 
-```
-
-```{r}
-
+?inla()
 ```
 
 Some Visualizations
@@ -599,8 +666,8 @@ Some Visualizations
 # Create the projector for the mesh
 gproj <- inla.mesh.projector(mesh, dims = c(300, 300))  # Adjust dims for resolution
 # Project the mean and standard deviation of the spatial field
-g.mean <- inla.mesh.project(gproj, result$summary.random$spatial.field$mean)
-g.sd <- inla.mesh.project(gproj, result$summary.random$spatial.field$sd)
+g.mean <- inla.mesh.project(gproj, best_result$summary.random$spatial.field$mean)
+g.sd <- inla.mesh.project(gproj, best_result$summary.random$spatial.field$sd)
 
 
 library(lattice)
@@ -637,8 +704,8 @@ ggplot(mean_df, aes(x = x, y = y, fill = value)) +
   scale_fill_viridis_c() +
   labs(
     title = "Spatial Field Mean",
-    x = "Longitude",
-    y = "Latitude",
+    x = "Projected Longitude",
+    y = "Projected Latitude",
     fill = "Latent Effect"
   ) +
   theme_minimal()
@@ -654,11 +721,346 @@ ggplot(sd_df, aes(x = x, y = y, fill = value)) +
   scale_fill_viridis_c() +
   labs(
     title = "Spatial Field SD",
-    x = "Longitude",
-    y = "Latitude",
+    x = "Projected Longitude",
+    y = "Projected Latitude",
     fill = "Latent Effect"
   ) +
   theme_minimal()
+```
+```{r}
+# Visualize Posterior distribution across townships
+str(best_result)
+fixed_names <- best_set
+for (fn in fixed_names) {
+  marginal <- best_result$marginals.fixed[[fn]]
+  plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
+       xlab = fn, ylab = "Density")
+  abline(v = inla.emarginal(function(x) x, marginal), col = "red") # mean
+}
+
+#visualize difference between LA and SF
+# Extract marginal data for a specific predictor (example: "Opportunity_Zone_scaled")
+opportunity_zone_marginals <- best_result$marginals.fixed$Fed_Rate_scaled
+marginal_df <- as.data.frame(opportunity_zone_marginals)
+colnames(marginal_df) <- c("Value", "Density")
+
+# Add town labels (for illustrative purposes)
+marginal_df$Town <- ifelse(runif(nrow(marginal_df)) > 0.5, "San Diego", "San Francisco") # Replace with real labels
+
+# Plot density
+ggplot(marginal_df, aes(x = Value, y = Density, color = Town)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Posterior Distribution for 'Opportunity_Zone_scaled'",
+    x = "Value",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# visualize temporal dependence
+best_result$summary.hyperpar
+
+rho_marginal <- best_result$marginals.hyperpar[["Rho for Period"]]
+plot(rho_marginal, type = "l", main = "Posterior of AR1 Rho", xlab = "Rho", ylab = "Density")
+abline(v = inla.emarginal(function(x) x, rho_marginal), col = "red") # Posterior mean
+
+# visualize spatial range
+range_marginal <- best_result$marginals.hyperpar[["Range for spatial.field"]]
+
+# Plot the posterior distribution
+plot(range_marginal, type = "l",
+     main = "Posterior Distribution of Spatial Range",
+     xlab = "Spatial Range (in units of mesh projection, e.g., meters)",
+     ylab = "Density")
+abline(v = inla.emarginal(function(x) x, range_marginal), col = "red", lty = 2, lwd = 2)
+legend("topright", legend = "Posterior Mean", col = "red", lty = 2, bty = "n")
+```
+```{r}
+period_numeric <- d_modeling$Period_numeric
+index_est <- inla.stack.index(stack, tag = "data")$data
+fitted_mean <- best_result$summary.fitted.values$mean[index_est]
+fitted_lower <- best_result$summary.fitted.values$`0.025quant`[index_est]
+fitted_upper <- best_result$summary.fitted.values$`0.975quant`[index_est]
+
+# Aggregate by period if multiple towns per period
+period_summary <- data.frame(period_numeric, Fitted = fitted_mean, Lower = fitted_lower, Upper = fitted_upper) %>%
+  group_by(period_numeric) %>%
+  summarise(Fitted = mean(Fitted), Lower = mean(Lower), Upper = mean(Upper))
+
+ggplot(period_summary, aes(x = period_numeric, y = Fitted)) +
+  geom_line(color = "blue") +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
+  labs(title = "Fitted Deal Volume Over Time",
+       x = "Time (Period Numeric)",
+       y = "Fitted Deal Volume") +
+  theme_minimal()
+
+
+# Example (adjust to your objects):
+proj <- inla.mesh.projector(mesh, dims = c(200, 200))
+linpred_mean <- best_result$summary.linear.predictor$mean[index_est_for_mesh] # Replace with correct indices
+my.levelplot(proj, linpred_mean, main = "Projected Mean Linear Predictor")
 
 ```
+
+
+
+# Predicting Future Deal Volume
+
+Date frame ended at June 2023, lets create a period for July 2023-Jan 2024
+
+```{r}
+# Create a new `d_modeling_future` with NA rows, setting Period to 2024-01-01
+d_modeling_future <- data.frame(Town = unique(d_modeling$Town))
+d_modeling_future$Period <- as.Date("2024-01-01")
+
+# Step 2: Add missing columns from `best_set` as NA
+required_columns <- c("Town", "Period", best_set)
+for (col in setdiff(required_columns, colnames(d_modeling_future))) {
+  d_modeling_future[[col]] <- NA
+}
+
+d_modeling$Period <- as.Date(d_modeling$Period)
+# Step 3: Process Home Value data
+home_value_2024 <- read.csv("z_home_value_unique.csv") %>%
+  mutate(Date = as.Date(Date)) %>%
+  filter(Date > as.Date("2023-06-06") & Date < as.Date("2024-01-01")) %>%
+  group_by(City) %>%
+  summarize(HomeValue = mean(HomeValue, na.rm = TRUE)) %>%
+  filter(City %in% unique(d_modeling_future$Town)) %>%
+  mutate(HomeValue_scaled = scale(HomeValue, center = mean(d_modeling$HomeValue, na.rm = TRUE),
+                                  scale = sd(d_modeling$HomeValue, na.rm = TRUE)))
+
+# Join Home Value data to `d_modeling_future`
+d_modeling_future <- d_modeling_future %>%
+  left_join(home_value_2024 %>% select(City, HomeValue_scaled) %>%
+              rename(Town = City),
+            by = "Town")
+
+# Step 4: Process Federal Rate data
+fed_2024 <- read.csv("fed_cleaned.csv") %>%
+  mutate(Date = as.Date(Date)) %>%
+  filter(Date > as.Date("2023-06-06") & Date < as.Date("2024-01-01")) %>%
+  summarize(Fed_Rate = mean(Rate, na.rm = TRUE)) %>%
+  mutate(Fed_Rate_scaled = scale(Fed_Rate, center = mean(d_modeling$Fed_Rate, na.rm = TRUE),
+                                 scale = sd(d_modeling$Fed_Rate, na.rm = TRUE))) %>%
+  select(Fed_Rate_scaled)
+
+# Assign Federal Rate data to `d_modeling_future`
+d_modeling_future$Fed_Rate_scaled <- rep(fed_2024$Fed_Rate_scaled, nrow(d_modeling_future))
+
+# Define predictors to keep the same as 2023-01-01
+predictors_constant <- c(
+  "Residential_Percentage", "Industrial_Percentage",
+  "Office_Percentage", "Other_Percentage", "Retail_Percentage",
+  "Total_Size_Sq_Ft", "Opportunity_Zone"
+)
+
+# Define predictors to use median growth rate
+predictors_median_growth <- c(
+  "Estimate.Worked.at.home", "Welfare_Benefits_raw", "Other_Services_raw",
+  "Govt_Benefits_raw", "Estimate.No.health.insurance.coverage",
+  "Estimate.Unpaid.family.workers", "Estimate.Mean.travel.time.to.work..minutes."
+)
+
+d_modeling$Period <- as.Date(d_modeling$Period)
+# Latest values for 2023-01-01
+latest_values <- d_modeling %>%
+  filter(Period == as.Date("2023-01-01")) %>%
+  select(Town, all_of(predictors_constant), all_of(predictors_median_growth))
+
+# Calculate median growth rates across all towns
+# Calculate median growth rates across all towns for each predictor
+growth_data <- d_modeling %>%
+  filter(Period %in% as.Date(c("2018-01-01", "2023-01-01"))) %>%
+  select(Town, Period, all_of(predictors_median_growth)) %>%
+  pivot_wider(names_from = Period, values_from = all_of(predictors_median_growth), 
+              names_sep = "_Value_") %>%
+  mutate(across(ends_with("_Value_2018-01-01"), ~ replace_na(., 0))) %>%
+  mutate(across(ends_with("_Value_2023-01-01"), ~ replace_na(., 0))) %>%
+  rowwise() %>%
+  mutate(across(ends_with("_Value_2018-01-01"), ~ {
+    start_col <- cur_column()
+    end_col <- sub("_2018-01-01$", "_2023-01-01", start_col)
+    start_value <- cur_data()[[start_col]]
+    end_value <- cur_data()[[end_col]]
+    if (abs(start_value) < 1e-6) {
+      if (abs(end_value) < 1e-6) return(0)  # Zero growth if both are zero
+      return(Inf)  # Growth from 0 to a number
+    }
+    (end_value - start_value) / abs(start_value)  # Regular growth rate
+  }, .names = "GrowthRate_{col}")) %>%
+  ungroup() %>%
+  summarize(across(starts_with("GrowthRate_"), median, na.rm = TRUE, .names = "{col}_Median"))
+
+growth_data <- growth_data %>%
+  rename_with(~ gsub("GrowthRate_", "", .)) %>%
+  rename_with(~ gsub("_Value_2018-01-01_Median$", "", .))
+
+# Ensure growth_data now has clean column names matching predictors_median_growth
+print(colnames(growth_data))
+
+# Project 2024 values
+projected_values <- latest_values %>%
+  mutate(across(
+    all_of(predictors_constant),
+    ~ .x, # Keep constant values as is
+    .names = "{col}_projected"
+  )) %>%
+  mutate(across(
+    all_of(predictors_median_growth),
+    ~ .x * (1 + growth_data[[cur_column()]]), # Use correct column from growth_data
+    .names = "{col}_projected"
+  ))
+
+# Normalize projected values and map to '_scaled'
+projected_normalized <- projected_values %>%
+  mutate(across(ends_with("_projected"), ~ scale(.x, center = mean(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE),
+                                                 scale = sd(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE)),
+                .names = "{col}_scaled")) %>%
+  select(Town, ends_with("_scaled"))
+
+# Join projected values to `d_modeling_future`
+d_modeling_future <- d_modeling_future %>%
+  left_join(projected_normalized, by = "Town")
+
+# Select relevant columns and clean column names
+# Select relevant columns and clean column names
+d_modeling_future <- d_modeling_future %>%
+  select(
+    Town, Period, 
+    Fed_Rate_scaled, HomeValue_scaled.y, 
+    Residential_Percentage_projected_scaled, Other_Percentage_projected_scaled,     
+    Industrial_Percentage_projected_scaled, Office_Percentage_projected_scaled, 
+    Retail_Percentage_projected_scaled, Total_Size_Sq_Ft_projected_scaled, 
+    Opportunity_Zone_projected_scaled, Estimate.Worked.at.home_projected_scaled, 
+    Welfare_Benefits_raw_projected_scaled, Other_Services_raw_projected_scaled, 
+    Govt_Benefits_raw_projected_scaled, 
+    Estimate.No.health.insurance.coverage_projected_scaled, 
+    Estimate.Unpaid.family.workers_projected_scaled, 
+    Estimate.Mean.travel.time.to.work..minutes._projected_scaled
+  ) %>%
+  rename_with(
+    ~ gsub("_raw", "", .), 
+    ends_with("_raw_projected_scaled")
+  ) %>%
+  rename_with(
+    ~ gsub("_projected", "", .), 
+    ends_with("_projected_scaled")
+  ) %>%
+  rename_with(
+    ~ gsub("\\.y$", "", .), 
+    ends_with(".y")
+  )
+
+
+d_modeling_future <- d_modeling_future %>%
+  left_join(
+    d_modeling %>%
+      group_by(Town) %>%
+      slice(1) %>%  # Take the first row for each Town
+      ungroup() %>%
+      select(Town, coord_index),  # Only keep the necessary column
+    by = "Town"
+  )
+
+d_modeling$Period <- as.factor(d_modeling$Period)
+```
+
+
+
+```{r}
+# Ensure `2024-01-01` is a level in `Period`
+d_modeling_future$Period <- factor(
+  d_modeling_future$Period,
+  levels = c(levels(d_modeling$Period), "2024-01-01")  # Add the new level
+)
+
+# Create the future projection matrix for spatial effects
+A_future <- inla.spde.make.A(
+  mesh = mesh,
+  loc = coords[d_modeling_future$coord_index, ]
+)
+d_modeling_future %>% colnames()
+
+# Define the prediction stack
+stack_future <- inla.stack(
+  data = list(y = rep(NA, nrow(d_modeling_future))),  # Placeholder for predictions
+  A = list(A_future, 1),  # Projection matrices
+  effects = list(
+    spatial.field = spatial_index,  # Spatial field effects
+    d_modeling_future %>% select(all_of(best_set), Period)  # Fixed effects and time effect
+  ),
+  tag = "future"
+)
+
+# Combine the original stack with the prediction stack
+stack_combined <- inla.stack(stack, stack_future)
+
+# Use the existing model to generate predictions
+prediction_result <- inla(
+  formula,
+  data = inla.stack.data(stack_combined),
+  family = "poisson",
+  control.predictor = list(A = inla.stack.A(stack_combined), compute = TRUE, link = 1),
+  control.compute = list(dic = TRUE, waic = TRUE)  # Disable diagnostics for predictions
+)
+
+# Extract predictions
+index_future <- inla.stack.index(stack_combined, tag = "future")$data
+future_predictions <- prediction_result$summary.fitted.values[index_future, ]
+
+summary(future_predictions)
+# Add predictions to `d_modeling_future`
+d_modeling_future <- d_modeling_future %>%
+  mutate(
+    Predicted_Mean = exp(future_predictions$mean),
+    Predicted_SD = exp(future_predictions$sd),  # Note: This is not standard deviation in count space but transformed
+    Predicted_Lower = exp(future_predictions$`0.025quant`),
+    Predicted_Upper = exp(future_predictions$`0.975quant`)
+  )
+
+# Inspect transformed predictions
+head(d_modeling_future)
+
+# Inspect the predicted results
+head(d_modeling_future)
+d_modeling_future %>% select(Town, Period, Predicted_Mean, Predicted_Lower, Predicted_Upper)
+
+
+# Extract the indices for the original data from the INLA stack
+index_original <- inla.stack.index(stack, tag = "data")$data
+
+# Extract the fitted values from the INLA model
+# These are typically on the log scale for a Poisson model
+fitted_values <- best_result$summary.fitted.values[index_original, ]
+
+# Transform predictions to the response scale (exponentiation)
+d_modeling <- d_modeling %>%
+  mutate(
+    Predicted_Mean = fitted_values$mean,
+    Predicted_Lower = fitted_values$`0.025quant`,
+    Predicted_Upper = fitted_values$`0.975quant`
+  )
+
+# Display the updated dataset with predictions
+head(d_modeling) %>% select(Town, Period, Predicted_Mean, Predicted_Lower, Predicted_Upper)
+
+```
+
+
+```{r}
+# Check summary statistics for predictors in d_modeling_future
+summary(d_modeling_future %>% select(all_of(best_set)))
+
+# Compare with predictors from the original dataset
+summary(d_modeling %>% select(all_of(best_set)))
+
+# Check for extreme values or outliers
+sapply(d_modeling_future %>% select(all_of(best_set)), function(x) {
+  c(min = min(x, na.rm = TRUE), max = max(x, na.rm = TRUE))
+})
+
+```
+
 
