@@ -484,91 +484,47 @@ consolidated_predictors <- c(
 )
 
 # Other Predictors to Keep
-other_predictors <- c(
-  "Avg_Deal_Size_scaled", "Fed_Rate_scaled",
+other_predictors <- c("Fed_Rate_scaled",
   "Unemployment_Rate_scaled", "HomeValue_scaled", "Estimate.Worked.at.home_scaled",
   "Estimate.Mean.travel.time.to.work..minutes._scaled",
   "Estimate.Unpaid.family.workers_scaled", "Estimate.Median.household.income..dollars._scaled",
   "Estimate.With.health.insurance.coverage..With.private.health.insurance_scaled",
-  "Estimate.No.health.insurance.coverage_scaled", "Opportunity_Zone_scaled",
-  "Residential_Percentage_scaled", "Industrial_Percentage_scaled",
-  "Office_Percentage_scaled", "Retail_Percentage_scaled", "Other_Percentage_scaled"
+  "Estimate.No.health.insurance.coverage_scaled", "Opportunity_Zone_scaled"
+)
+
+# Consolidated Predictor Names
+consolidated_predictors <- c(
+  "Car_scaled", "Other_Transportation_scaled", "Children_scaled",
+  "Corporate_scaled", "Blue_Collar_scaled", "Other_Services_scaled",
+  "Govt_Benefits_scaled", "Welfare_Benefits_scaled"
+)
+
+# Other Predictors to Keep
+other_predictors <- c("Fed_Rate_scaled",
+  "Unemployment_Rate_scaled", "HomeValue_scaled", "Estimate.Worked.at.home_scaled",
+  "Estimate.Mean.travel.time.to.work..minutes._scaled",
+  "Estimate.Unpaid.family.workers_scaled", "Estimate.Median.household.income..dollars._scaled",
+  "Estimate.With.health.insurance.coverage..With.private.health.insurance_scaled",
+  "Estimate.No.health.insurance.coverage_scaled", "Opportunity_Zone_scaled"
 )
 
 # Final Predictors for Modeling
 final_predictors <- c(other_predictors, consolidated_predictors)
 
 # ------------------------------
-# Step 5: OPTIONAL MODEL SELECTION BASED ON WAIC
-# ------------------------------
-# The following is the forward selection process we discussed.
-# We will comment it out and just use the best_set from previous analysis.
-
-# candidate_predictors <- final_predictors
-# selected_set <- c()
-# remaining_set <- candidate_predictors
-# 
-# best_waic <- Inf
-# best_model <- NULL
-# best_set <- NULL
-# 
-# while (length(remaining_set) > 0) {
-#  improvement <- FALSE
-#  predictor_to_add <- NULL
-# 
-#  for (p in remaining_set) {
-#    current_set <- c(selected_set, p)
-#    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
-#    formula <- as.formula(formula_str)
-# 
-#    result_temp <- inla(
-#      formula,
-#      data = inla.stack.data(stack),
-#      family = "poisson",
-#      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-#      control.compute = list(dic = TRUE, waic = TRUE)
-#    )
-# 
-#    waic_val <- result_temp$waic$waic
-# 
-#    if (waic_val < best_waic) {
-#      best_waic <- waic_val
-#      best_model <- result_temp
-#      best_set <- current_set
-#      improvement <- TRUE
-#      predictor_to_add <- p
-#    }
-#  }
-# 
-#  if (improvement) {
-#    selected_set <- best_set
-#    remaining_set <- setdiff(candidate_predictors, selected_set)
-#  } else {
-#    break
-#  }
-# }
-# 
-# print(selected_set)
-
-
-# # After running the process once, we have a known best_set:
-best_set <- c(
- "Residential_Percentage_scaled", "Industrial_Percentage_scaled",
- "Office_Percentage_scaled", "Other_Percentage_scaled",
- "Retail_Percentage_scaled", "Estimate.Worked.at.home_scaled",
- "Welfare_Benefits_scaled", "Other_Services_scaled",
- "Govt_Benefits_scaled", "Estimate.No.health.insurance.coverage_scaled",
- "Estimate.Unpaid.family.workers_scaled", "Fed_Rate_scaled",
- "Total_Size_Sq_Ft_scaled", "HomeValue_scaled",
- "Estimate.Mean.travel.time.to.work..minutes._scaled", "Opportunity_Zone_scaled"
-)
-
-# Now you can just use `best_set` in your final modeling step without re-running model selection.
-
-# ------------------------------
-# Step 6: Spatial Projection and Mesh Construction
+# Step 5: Model Selection Using WAIC
 # ------------------------------
 
+# Define candidate predictors
+candidate_predictors <- final_predictors
+selected_set <- c()
+remaining_set <- candidate_predictors
+
+best_waic <- Inf
+best_model <- NULL
+best_set <- NULL
+
+# Prepare spatial elements for INLA
 d_modeling <- d_modeling %>%
   drop_na(lon.census.town, lat.census.town)
 
@@ -605,37 +561,71 @@ town_to_index <- data.frame(
 d_modeling <- d_modeling %>%
   left_join(town_to_index, by = "Town")
 
+# Create the A matrix
 A <- inla.spde.make.A(mesh, loc = coords[d_modeling$coord_index, ])
 
-# ------------------------------
-# Step 7: Model Fitting Using Best Set
-# ------------------------------
-
-predictor_data <- d_modeling %>%
-  select(all_of(best_set))
-
-covariate_data <- data.frame(
-  predictor_data,
-  Period = d_modeling$Period,
-  Town = d_modeling$Town
-)
 
 
+# Run forward selection
+while (length(remaining_set) > 0) {
+  improvement <- FALSE
+  for (p in remaining_set) {
+    current_set <- c(selected_set, p)
+    formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(current_set, collapse = " + "))
+    formula <- as.formula(formula_str)
+
+    # Prepare covariate data
+    covariate_data <- d_modeling %>%
+      select(all_of(current_set), Period, Town)
+
+    stack <- inla.stack(
+      data = list(y = y),
+      A = list(A, 1),
+      effects = list(spatial.field = spatial_index, covariate_data),
+      tag = "data"
+    )
+
+    # Run the INLA model
+    result_temp <- inla(
+      formula,
+      data = inla.stack.data(stack),
+      family = "poisson",
+      control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+      control.compute = list(dic = TRUE, waic = TRUE)
+    )
+
+    waic_val <- result_temp$waic$waic
+
+    if (waic_val < best_waic) {
+      best_waic <- waic_val
+      best_model <- result_temp
+      best_set <- current_set
+      improvement <- TRUE
+    }
+  }
+
+  if (improvement) {
+    selected_set <- best_set
+    remaining_set <- setdiff(candidate_predictors, selected_set)
+  } else {
+    break
+  }
+}
+
+# Print the best set of predictors
+print(best_set)
+
+# Use the best set for the final model
+formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", paste(best_set, collapse = " + "))
+formula <- as.formula(formula_str)
 
 stack <- inla.stack(
   data = list(y = y),
   A = list(A, 1),
-  effects = list(
-    spatial.field = spatial_index,
-    covariate_data
-  ),
+  effects = list(spatial.field = spatial_index, covariate_data = d_modeling %>% select(all_of(best_set), Period, Town)),
   tag = "data"
 )
 
-all_best_str <- paste(best_set, collapse = " + ")
-formula_str <- paste0("y ~ -1 + f(spatial.field, model = spde) + f(Period, model = 'ar1') + ", all_best_str)
-formula <- as.formula(formula_str)
-?inla()
 best_result <- inla(
   formula,
   data = inla.stack.data(stack),
@@ -644,9 +634,12 @@ best_result <- inla(
   control.compute = list(dic = TRUE, waic = TRUE)
 )
 
-plot(best_result)
+# Summary and diagnostics
 summary(best_result)
+plot(best_result)
 
+
+d_modeling
 # Extract fitted values
 fitted_values <- best_result$summary.fitted.values$mean[inla.stack.index(stack, tag = "data")$data]
 
@@ -863,15 +856,7 @@ predictors_median_growth <- c(
   "Estimate.Unpaid.family.workers", "Estimate.Mean.travel.time.to.work..minutes."
 )
 
-d_modeling$Period <- as.Date(d_modeling$Period)
-# Latest values for 2023-01-01
-latest_values <- d_modeling %>%
-  filter(Period == as.Date("2023-01-01")) %>%
-  select(Town, all_of(predictors_constant), all_of(predictors_median_growth))
-
-# Calculate median growth rates across all towns
-# Calculate median growth rates across all towns for each predictor
-growth_data <- d_modeling %>%
+growth_data_per_town <- d_modeling %>%
   filter(Period %in% as.Date(c("2018-01-01", "2023-01-01"))) %>%
   select(Town, Period, all_of(predictors_median_growth)) %>%
   pivot_wider(names_from = Period, values_from = all_of(predictors_median_growth), 
@@ -879,29 +864,84 @@ growth_data <- d_modeling %>%
   mutate(across(ends_with("_Value_2018-01-01"), ~ replace_na(., 0))) %>%
   mutate(across(ends_with("_Value_2023-01-01"), ~ replace_na(., 0))) %>%
   rowwise() %>%
-  mutate(across(ends_with("_Value_2018-01-01"), ~ {
-    start_col <- cur_column()
-    end_col <- sub("_2018-01-01$", "_2023-01-01", start_col)
+  mutate(across(all_of(predictors_median_growth), ~ {
+    start_col <- paste0(cur_column(), "_Value_2018-01-01")
+    end_col <- paste0(cur_column(), "_Value_2023-01-01")
     start_value <- cur_data()[[start_col]]
     end_value <- cur_data()[[end_col]]
+    
     if (abs(start_value) < 1e-6) {
-      if (abs(end_value) < 1e-6) return(0)  # Zero growth if both are zero
-      return(Inf)  # Growth from 0 to a number
+      if (abs(end_value) < 1e-6) {
+        return(0)  # Zero growth if both are zero
+      } else {
+        return(NA) # Mark as needing median assignment
+      }
     }
-    (end_value - start_value) / abs(start_value)  # Regular growth rate
+    
+    growth_rate <- (end_value - start_value) / abs(start_value)
+    
+    return(growth_rate)
   }, .names = "GrowthRate_{col}")) %>%
-  ungroup() %>%
-  summarize(across(starts_with("GrowthRate_"), median, na.rm = TRUE, .names = "{col}_Median"))
+  ungroup()
 
-growth_data <- growth_data %>%
-  rename_with(~ gsub("GrowthRate_", "", .)) %>%
-  rename_with(~ gsub("_Value_2018-01-01_Median$", "", .))
+# Reshape growth_data_per_town to long format for easier processing
+growth_long <- growth_data_per_town %>%
+  select(Town, starts_with("GrowthRate_")) %>%
+  pivot_longer(
+    cols = starts_with("GrowthRate_"),
+    names_to = "Predictor",
+    names_prefix = "GrowthRate_",
+    values_to = "GrowthRate"
+  )
 
-# Ensure growth_data now has clean column names matching predictors_median_growth
-print(colnames(growth_data))
+# Identify extreme outliers per predictor
+# Define what constitutes an extreme outlier, e.g., beyond 1.5 * IQR from Q1 and Q3
+growth_long <- growth_long %>%
+  group_by(Predictor) %>%
+  mutate(
+    Q1 = quantile(GrowthRate, 0.25, na.rm = TRUE),
+    Q3 = quantile(GrowthRate, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    Lower_Bound = Q1 - 1.5 * IQR,
+    Upper_Bound = Q3 + 1.5 * IQR,
+    Is_Outlier = GrowthRate < Lower_Bound | GrowthRate > Upper_Bound
+  ) %>%
+  ungroup()
 
-# Project 2024 values
+# Calculate the 75th quartile and median growth rates per predictor
+growth_quartiles <- growth_long %>%
+  group_by(Predictor) %>%
+  summarize(
+    Q3_GrowthRate = quantile(GrowthRate, 0.75, na.rm = TRUE),
+    Median_GrowthRate = median(GrowthRate, na.rm = TRUE)
+  )
+
+# Join quartile information back to the growth_long data
+growth_long <- growth_long %>%
+  left_join(growth_quartiles, by = "Predictor") %>%
+  mutate(
+    Adjusted_GrowthRate = case_when(
+      Is_Outlier ~ Q3_GrowthRate,                                     # Assign 75th quartile if outlier
+      is.na(GrowthRate) ~ Median_GrowthRate,                         # Assign median if growth rate was NA (start=0 & end!=0)
+      TRUE ~ GrowthRate                                                # Otherwise, keep original growth rate
+    )
+  )
+
+# Reshape back to wide format with adjusted growth rates
+adjusted_growth_data <- growth_long %>%
+  select(Town, Predictor, Adjusted_GrowthRate) %>%
+  pivot_wider(names_from = Predictor, values_from = Adjusted_GrowthRate, 
+              names_prefix = "GrowthRate_")
+
+# Ensure column names match the predictors_median_growth
+adjusted_growth_data <- adjusted_growth_data %>%
+  rename_with(~ gsub("GrowthRate_", "", .), starts_with("GrowthRate_"))
+
+# Step 4: Project 2024 values using adjusted growth rates
+
+# Merge the adjusted growth rates with the latest_values
 projected_values <- latest_values %>%
+  left_join(adjusted_growth_data, by = "Town") %>%
   mutate(across(
     all_of(predictors_constant),
     ~ .x, # Keep constant values as is
@@ -909,20 +949,21 @@ projected_values <- latest_values %>%
   )) %>%
   mutate(across(
     all_of(predictors_median_growth),
-    ~ .x * (1 + growth_data[[cur_column()]]), # Use correct column from growth_data
+    ~ .x * (1 + get(.x)), # Use the adjusted growth rate
     .names = "{col}_projected"
   ))
 
 # Normalize projected values and map to '_scaled'
 projected_normalized <- projected_values %>%
   mutate(across(ends_with("_projected"), ~ scale(.x, center = mean(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE),
-                                                 scale = sd(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE)),
+                                                     scale = sd(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE)),
                 .names = "{col}_scaled")) %>%
   select(Town, ends_with("_scaled"))
 
 # Join projected values to `d_modeling_future`
 d_modeling_future <- d_modeling_future %>%
   left_join(projected_normalized, by = "Town")
+
 
 # Select relevant columns and clean column names
 # Select relevant columns and clean column names

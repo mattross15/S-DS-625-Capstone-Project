@@ -330,7 +330,7 @@ df <- df %>%
 df <- df %>%
   mutate(sanity_check = ifelse(sanity_check == "Fail", "Pass", sanity_check))
 
-write.csv(df, "intermediate_for_modeling.csv")
+# write.csv(df, "intermediate_for_modeling.csv")
 
 ```
 
