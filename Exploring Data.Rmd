@@ -204,6 +204,7 @@ plan(multisession, workers = parallel::detectCores() - 1)
 # Set your Google API key for tidygeocoder
 # options(tidygeocoder.google_api_key = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
 # Sys.setenv(GOOGLEGEOCODE_API_KEY = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
+
 # Function to geocode a single address using Google via tidygeocoder
 geocode_address <- function(location) {
   tryCatch({

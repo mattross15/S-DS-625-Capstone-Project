@@ -21,10 +21,8 @@ library(tidyr)
 ```{r}
 
 d <- read_excel("/Users/mross/Downloads/Preqin_redeals_restructured_export-14_Oct_24d3b0344b-018a-411e-b123-54e16ddbbdcc.xlsx")
-
 d <- data.frame(d)
 
-# Step 1: Define the columns to check for NA values and remove rows with NA in those columns
 columns_to_check <- c(
   "DEAL.NAME", "DEAL.DATE", "DEAL.TYPE", "PRIMARY.LOCATION", "PRIMARY.ASSET.TYPE", 
   "DEAL.OVERVIEW", "INVESTORS...BUYERS..FIRMS.", "BOUGHT.FROM...SELLERS..FIRMS.", 
@@ -32,16 +30,13 @@ columns_to_check <- c(
   "ASSET.CITIES", "ASSETS.TYPES", "ASSETS", "BUYER.TYPE", "SELLER.TYPE"
 )
 
-# Step 2: Omit rows with NA in the specified columns
+# omit rows with NA in the specified columns
 d_cleaned <- d[complete.cases(d[, columns_to_check]), ]
-
-# Step 3: Add back the specified columns
 columns_to_add_back <- c("DEAL.SIZE..USD.MN.", "NO..OF.ASSETS", "TOTAL.SIZE..SQ..FT..")
 
-# Add these columns to the cleaned dataset
 d_final <- d_cleaned[, c(columns_to_check, columns_to_add_back)]
 
-# Step 4: Clean up the column names
+# clean column names
 clean_colnames <- function(col_names) {
   col_names <- gsub("\\.+", " ", col_names)  # Replace multiple dots with spaces
   col_names <- gsub("\\.$", "", col_names)   # Remove trailing dots
@@ -49,21 +44,21 @@ clean_colnames <- function(col_names) {
   return(col_names)
 }
 
-
 colnames(d_final) <- clean_colnames(colnames(d_final))
-
+# get only california
 ca = d_final[d_final$`Asset States` == "CA", ]
 unique(ca$`Asset Cities`)
 
 # keep only first location for each deal
 ca$`Asset Cities` <- gsub(",.*", "", ca$`Asset Cities`)
 unique(ca$`Asset Cities`)
-ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
 
+# misc fix
+ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
 ```
 
 ```{r}
-# Load necessary libraries
+
 ca$`Deal Date` <- as.POSIXct(ca$`Deal Date`, format = "%Y-%m-%d %H:%M:%S")
 
 # Create a new `Year` column
@@ -184,50 +179,38 @@ z_new_construction <- z_new_construction[z_new_construction$StateName == "CA", ]
 library(dplyr)
 
 # Specify the folder path
-folder_path <- "/Users/mross/Downloads/ACSData_ByCity"
+folder_path <- "/Rawdata/ACS_Rawdata_ByCity"
 
-# List all CSV files in the folder that contain "Data" in their name
+# files we need have "Data" in their name
 csv_files <- list.files(path = folder_path, pattern = "Data.*\\.csv$", full.names = TRUE)
 
-# Function to extract the year from the filename
 extract_year <- function(filename) {
   year <- sub(".*ACSDP1Y(20\\d{2}).*", "\\1", filename)
   return(as.numeric(year))
 }
-
 # Read and bind the data
 acs <- do.call(rbind, lapply(csv_files, function(file) {
   data <- read.csv(file)
   data$Year <- extract_year(file)
   return(data)
 }))
+
+# misc cleaning
 acs[1,552] <- "Year"
 colnames(acs) <- acs[1,]
-
-
 acs <- acs[!is.na(as.numeric(as.character(acs$`Estimate!!EMPLOYMENT STATUS!!Population 16 years and over`))), ]
 acs <- acs[, !duplicated(colnames(acs))]
-
 columns_to_keep <- (colnames(acs) == "Year") | 
                    (grepl("^(Estimate!!|Percent!!)", colnames(acs)) & 
                     !grepl("Margin of Error", colnames(acs))) | (colnames(acs) == "Geographic Area Name")
-
-# Subset the dataframe to keep only the desired columns
 acs_selected <- acs[, columns_to_keep]
 
-# Modify the column names as per your requirement
 
-# Step 1: Remove substrings enclosed by "!!...!!" and replace them with a space
+# clean up syntax
 colnames(acs_selected) <- gsub("!![^!]*!!", " ", colnames(acs_selected))
-
-# Step 2: Replace multiple spaces with a single space
 colnames(acs_selected) <- gsub("\\s+", " ", colnames(acs_selected))
-
-# Step 3: Trim leading and trailing whitespace from the column names
 colnames(acs_selected) <- trimws(colnames(acs_selected))
-
 acs <- acs_selected
-
 acs$`Geographic Area Name` <- gsub("city,.*", "", acs$`Geographic Area Name`)
 acs$`Geographic Area Name` <- gsub("CDP.*", "", acs$`Geographic Area Name`)
 acs$`Geographic Area Name` <- gsub("town.*", "", acs$`Geographic Area Name`)
@@ -239,35 +222,34 @@ acs$`Geographic Area Name` <- gsub("town.*", "", acs$`Geographic Area Name`)
 library(tigris)
 library(tidycensus)
 library(sf)
-opp <- read.csv("/Users/mross/Downloads/Opportunity_Zones_-5617125383102974896.csv")
+opp <- read.csv("/Rawdata/OpportunityZone_Rawdata.csv")
 opp <- opp[opp$STUSAB == "CA", ]
 
-opp_sf <- st_read("/Users/mross/Downloads/Opportunity_Zones_6143711553447977475/Opportunity_Zones.shp")
+opp_sf <- st_read("/Rawdata/OpportunityZonesShapefile/OpportunityZoneShapefile_Rawdata.shp")
 
 # Load California places (city boundaries) as sf object
 ca_places <- places(state = "CA", cb = TRUE, year = 2020) %>%
-  select(NAME, GEOID)  # Selecting only the relevant columns (city name and FIPS code)
+  select(NAME, GEOID) 
 
 # Ensure both layers (opp_sf and ca_places) are in the same CRS
 opp_sf <- st_transform(opp_sf, crs = st_crs(ca_places))
 
-# Step 4: Find the Nearest City for Each Opportunity Zone Tract
+# nearest city to each opportunity zone
 nearest_cities <- st_nearest_feature(opp_sf, ca_places)
 
-# Add the nearest city name and GEOID to the Opportunity Zones data
+# Add nearest city name and GEOID to the Opportunity Zones data
 opp_with_towns <- opp_sf %>%
   mutate(
     Nearest_City = ca_places$NAME[nearest_cities],
     City_GEOID = ca_places$GEOID[nearest_cities]
   )
 
-# View the updated data with nearest city names
-head(opp_with_towns)
-
 opp = st_drop_geometry(opp_with_towns)
 opp = opp[opp$STUSAB == "CA",]
 
-## Contains census tracts that are "opportunity zones" as of 2019, don't have change over time. Maybe include indicator variable?
+## Contains census tracts that are "opportunity zones" as of 2019, 
+## don't have change over time
+## will include as indicator variable
 
 opportunity_cities = opp %>%
   select(Nearest_City) %>%
