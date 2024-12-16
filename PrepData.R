@@ -92,6 +92,8 @@ fed <- fed %>%
     Rate = as.numeric(Rate)
   )
 
+write.csv(fed, "Cleaneddata/fed_cleaned.csv", row.names = FALSE)
+
 ####################################################
 
 ### ZILLOW DATA #######################################
@@ -217,11 +219,11 @@ bls <- bls %>%
 
 df_geo <- df %>%
   distinct(Town) %>%
-  geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+  tidygeocoder::geocode(address = Town, method = "osm", lat = latitude, long = longitude)
 
 bls_geo <- bls %>%
   distinct(Area) %>%
-  geocode(address = Area, method = "osm", lat = latitude, long = longitude)
+  tidygeocoder::geocode(address = Area, method = "osm", lat = latitude, long = longitude)
 
 distance_results <- expand.grid(df_geo$Town, bls_geo$Area) %>%
   rename(Town = Var1, Area = Var2) %>%
@@ -234,6 +236,8 @@ nearest_matches <- distance_results %>%
   slice_min(order_by = distance, n = 1) %>%
   ungroup() %>%
   select(Town, Area)
+
+write.csv(nearest_matches, "Cleaneddata/nearest_matches_bls.csv", row.names = FALSE) # for later processing
 
 df <- df %>%
   left_join(nearest_matches, by = "Town") %>%  # Join the nearest matched Area
@@ -254,7 +258,7 @@ z_home_value_unique <- z_home_value %>%
   group_by(City, Date) %>%
   summarize(HomeValue = mean(HomeValue, na.rm = TRUE), .groups = "drop")
 
-# write.csv(z_home_value_unique, "z_home_value_unique.csv")
+write.csv(z_home_value_unique, "Cleaneddata/z_home_value_unique.csv")
 
 df <- df %>%
   left_join(z_home_value_unique, by = c("Town" = "City", "Date" = "Date"))
@@ -283,7 +287,7 @@ df <- df %>%
 df_geo <- df %>%
   distinct(Town) %>%
   mutate(Town = paste(Town, "California", sep = ", ")) %>%
-  geocode(address = Town, method = "osm", lat = latitude, long = longitude)
+  tidygeocoder::geocode(address = Town, method = "osm", lat = latitude, long = longitude)
 
 # misc fix
 ca[ca$Asset.Cities == "Mountainview", "Asset Cities"] <- "Mountain View"
@@ -293,7 +297,7 @@ ca[ca$Asset.Cities == "Mountainview", "Asset Cities"] <- "Mountain View"
 ca_geo <- ca %>%
   distinct(Asset.Cities) %>%
   mutate(Asset.Cities = paste(Asset.Cities, "California", sep = ", ")) %>%
-  geocode(address = Asset.Cities, method = "osm", lat = latitude, long = longitude)
+  tidygeocoder::geocode(address = Asset.Cities, method = "osm", lat = latitude, long = longitude)
 
 # calc distances between each Town in df and each Asset City in ca
 distance_results <- expand.grid(df_geo$Town, ca_geo$Asset.Cities) %>%
@@ -315,6 +319,9 @@ nearest_matches <- nearest_matches %>%
     Town = gsub(", California", "", Town),
     Asset.Cities = gsub(", California", "", Asset.Cities)
   )
+
+# again, we'll use this later
+write.csv(nearest_matches, "Cleaneddate/nearest_matches_deal.csv")
 
 # Add nearest matches to the ca dataset
 ca <- ca %>%
@@ -338,7 +345,6 @@ saveRDS(df, "Data_Predictor.rds")
 merged_data <- ca %>%
   left_join(df, by = c("Town" = "Town", "Year_Month" = "Year_Month"))
 
-# write.csv(merged_data, "merged_final_new.csv")
 
 ### CLEANING MERGED DATA FURTHER ####################################
 

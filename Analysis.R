@@ -15,6 +15,8 @@ library(lubridate)
 library(zoo)
 library(geosphere)
 library(glmnet)
+library(treemapify)
+
 # INLA not available in CRAN
 # see https://www.r-inla.org/download-install 
 if (!requireNamespace("INLA", quietly = TRUE)) {
@@ -35,12 +37,30 @@ library(lattice)
 
 ###### EXPLORING DATA ##################################################
 
-## NEED TO ADD VISUALIZATIONS HERE ##
-
-## Los Angeles Leaflet Plot ###
-## Syntax aided by Chat-GPT ##
+## Visualizations based on deal specific data ##
 
 df <- readRDS("Data.rds")
+
+## Treemap Plot of Asset Class ###
+
+
+df_treemap <- df %>%
+  filter(!is.na(Primary.Asset.Type)) %>%
+  group_by(Town, Primary.Asset.Type) %>%
+  summarize(Deal_Volume = n(), .groups = "drop")
+
+ggplot(df_treemap, aes(area = Deal_Volume, fill = Primary.Asset.Type,
+                       label = paste(Town, "\n", Primary.Asset.Type))) +
+  geom_treemap() +
+  geom_treemap_text(colour = "white", place = "centre", size = 8) +
+  scale_fill_viridis_d() +
+  labs(title = "Deal Volume by Town and Asset Class") +
+  theme_minimal()
+ggsave(filename = "figures/fig1.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+
+## Los Angeles Deal Gifs ##
+## Syntax aided by Chat-GPT ##
 
 # Filter data for Los Angeles and arrange by time
 la_data <- df %>%
@@ -384,7 +404,88 @@ d_aggregated <- d_aggregated %>%
 print("Data processing complete - starting variable selection and INLA model")
 sum(is.na(d_aggregated$lat.census.town))
 
+### SOME VISUALIZATIONS ###
+
+## visualization of deals across towns ## 
+d_aggregated$Period
+df_yearly <- d_aggregated %>%
+  mutate(Year = as.numeric(substr(Period, 1, 4))) %>%
+  group_by(Town, Year) %>%
+  summarize(Deal_Volume = sum(Deal_Volume), .groups = "drop") %>%
+  mutate(log_Deal_Volume = log(Deal_Volume + 1)) %>%
+  filter(Town != "NA")
+
+top_towns <- df_yearly %>%
+  group_by(Town) %>%
+  summarize(Total_Deal_Volume = sum(Deal_Volume)) %>%
+  top_n(25, Total_Deal_Volume) %>%
+  pull(Town)
+
+df_yearly <- df_yearly %>%
+  filter(Town %in% top_towns)
+
+# now plot a heatmap
+ggplot(df_yearly, aes(x = Year, y = reorder(Town, log_Deal_Volume), fill = log_Deal_Volume)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c() +
+  labs(title = "Deal Volume by Town and Year",
+       x = "Year", y = "Town") +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 7, angle = 30),  # Adjust size and angle as needed
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+ggsave(filename = "figures/fig2.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+
+## yearly deal volume by town ## 
+ggplot(df_yearly, aes(x = Year, y = Deal_Volume, group = Town)) +
+  geom_line() +
+  facet_wrap(~ Town, scales = "free_y") +
+  labs(title = "Yearly Deal Volume Trends by Town",
+       x = "Year", y = "Deal Volume") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 6)
+  )
+ggsave(filename = "figures/fig3.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+## bubble map ##
+
+town_volume <- d_aggregated %>%
+  group_by(Town, lat.census.town, lon.census.town) %>%
+  summarize(Deal_Volume = sum(Deal_Volume), .groups = "drop")
+
+bbox <- make_bbox(lon = town_volume$lon.census.town, 
+                  lat = town_volume$lat.census.town, 
+                  f = 0.1)  # 'f' is the zoom factor (10% padding)
+california_map <- map_data("state", region = "california")
+ggplot() +
+  # Plot the base map
+  geom_polygon(data = california_map, 
+               aes(x = long, y = lat, group = group),
+               fill = "lightgray", color = "white") +
+  # Overlay the bubble points
+  geom_point(data = town_volume, 
+             aes(x = lon.census.town, y = lat.census.town, 
+                 size = Deal_Volume, color = Deal_Volume), 
+             alpha = 0.7) +
+  # Use a viridis color scale
+  scale_color_viridis_c(option = "C") +
+  # Adjust the size scale if needed
+  scale_size_continuous(range = c(2, 10)) +
+  # Labels and title
+  labs(title = "Deal Volume by Town (Spatial Distribution)",
+       x = "Longitude", y = "Latitude", 
+       size = "Deal Volume", color = "Deal Volume") +
+  # Minimal theme
+  theme_minimal() +
+  # Coordinate system
+  coord_fixed(1.3)
+ggsave(filename = "figures/fig4.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
 #### RUNNING THE INLA MODEL ####
+
 d_modeling <- d_aggregated
 
 
@@ -393,9 +494,9 @@ d_modeling <- d_modeling %>%
 
 all_numeric_columns <- names(d_modeling)[4:52]
 
-# dont want to normalize coordinates, lets leave them out
+# don't want to normalize coordinates, lets leave them out
 ## additionally, want to leave out Percentage, Total Deal Size, Sq. Ft, etc.
-## they proxies for deal volume
+## they're proxies for deal volume
 
 numeric_columns <- setdiff(all_numeric_columns, c("lat.census.town", "lon.census.town", "Residential_Percentage", "Industrial_Percentage", "Office_Percentage", "Retail_Percentage", "Other_Percentage", "Avg_Deal_Size", "Total_Size_Sq_Ft"))
 
@@ -405,7 +506,6 @@ d_modeling <- d_modeling %>%
     Town = as.factor(Town),
     Period = as.factor(Period)
   )
-
 
 # create numerical tile variable - probably not needed
 d_modeling <- d_modeling %>%
@@ -439,11 +539,11 @@ d_modeling <- d_modeling %>%
       `Estimate Self-employed in own not incorporated business workers_scaled`,
     Govt_Benefits_scaled = `Estimate With Social Security_scaled` +
       `Estimate With retirement income_scaled` +
-      `Estimate With Supplemental Security Income_scaled`+ `Estimate With health insurance coverage!!With public coverage`,
+      `Estimate With Supplemental Security Income_scaled`+ `Estimate With health insurance coverage!!With public coverage_scaled`,
     Welfare_Benefits_scaled = `Estimate With cash public assistance income_scaled` +
       `Estimate With Food Stamp/SNAP benefits in the past 12 months_scaled`
   )
-
+d_modeling$es
 # Derived predictors on the raw scale too - for prediction stuff later
 d_modeling <- d_modeling %>%
   mutate(
@@ -512,6 +612,7 @@ d_modeling <- d_modeling %>%
          mean(`Estimate With Food Stamp/SNAP benefits in the past 12 months`))
   )
 
+d_modeling$Estaimte
 # consolidated predictors
 consolidated_predictors <- c(
   "Car_scaled", "Other_Transportation_scaled", "Children_scaled",
@@ -519,7 +620,7 @@ consolidated_predictors <- c(
   "Govt_Benefits_scaled", "Welfare_Benefits_scaled"
 )
 
-# other predictors to keep based on Lasso % judgement
+# other predictors to keep based on Lasso  judgement
 other_predictors <- c("Fed_Rate_scaled",
                       "Unemployment_Rate_scaled", "HomeValue_scaled", "Estimate Worked at home_scaled",
                       "Estimate Mean travel time to work (minutes)_scaled",
@@ -538,6 +639,146 @@ na_rows <- d_modeling %>%
 d_modeling <- d_modeling[!na_rows, ]
 
 y <- d_modeling$Deal_Volume
+
+
+## first, let's do some visualizations with the consolidated predictors
+## plotting syntax helped by Chat-GPT
+
+plot_predictor_map <- function(data, predictor, map_data, title_suffix = "") {
+  # Ensure the predictor exists in the data
+  if (!predictor %in% colnames(data)) {
+    stop(paste("Predictor", predictor, "not found in the data."))
+  }
+  
+  # Create the plot
+  p <- ggplot() +
+    # Base map with uniform fill
+    geom_polygon(
+      data = map_data,
+      aes(x = long, y = lat, group = group),
+      fill = "lightgray",
+      color = "white",
+      alpha = 0.7
+    ) +
+    # Bubble map for Deal Volume colored by predictor
+    geom_point(
+      data = data,
+      aes_string(x = "lon.census.town", y = "lat.census.town", 
+                 color = predictor, size = "Deal_Volume"),
+      alpha = 0.6
+    ) +
+    # Color scale for the predictor
+    scale_color_viridis_c(option = "C", name = paste(predictor)) +
+    # Size scale for Deal Volume
+    scale_size_continuous(name = "Deal Volume", range = c(2, 10)) +
+    # Labels and Title
+    labs(
+      title = paste("Deal Volume and", title_suffix, predictor, "by Town"),
+      x = "Longitude",
+      y = "Latitude"
+    ) +
+    # Theme settings
+    theme_minimal() +
+    theme(
+      legend.position = "right",
+      plot.title = element_text(hjust = 0.5)
+    ) +
+    # Fixed coordinate ratio
+    coord_fixed(1.3)
+  
+  # Print the plot
+  print(p)
+}
+town_volume <- d_modeling %>%
+  group_by(Town, lat.census.town, lon.census.town) %>%
+  summarize(
+    Deal_Volume = sum(Deal_Volume),
+    Unemployment_Rate = mean(Unemployment_Rate, na.rm = TRUE),
+    HomeValue = mean(HomeValue, na.rm = TRUE),
+    Estimate.Median.household.income..dollars. = mean(`Estimate Median household income (dollars)`, na.rm = TRUE),
+    Estimate.No.health.insurance.coverage_scaled = mean(`Estimate No health insurance coverage_scaled`, na.rm = TRUE),
+    Welfare_Benefits_scaled = mean(Welfare_Benefits_scaled, na.rm = TRUE),
+    Blue_Collar_scaled = mean(Blue_Collar_scaled, na.rm = TRUE),
+    .groups = "drop"
+  )
+california_map <- map_data("state", region = "california")
+predictors <- c(
+  "Unemployment_Rate",
+  "HomeValue",
+  "Estimate.Median.household.income..dollars.",
+  "Estimate.No.health.insurance.coverage_scaled",
+  "Welfare_Benefits_scaled",
+  "Blue_Collar_scaled"
+)
+for (pred in predictors) {
+  plot_predictor_map(
+    data = town_volume,
+    predictor = pred,
+    map_data = california_map,
+    title_suffix = ""
+  )
+}
+# save plots
+for (i in seq_along(predictors)) {
+  plot_predictor_map(data = town_volume, predictor = predictors[i], map_data = california_map, title_suffix = "")
+  ggsave(filename = sprintf("figures/fig%d.png", 4 + i), plot = last_plot(), width = 10, height = 6, dpi = 300)
+}
+
+predictors_for_plotting <- c(
+  "Fed_Rate_scaled",
+  "Unemployment_Rate_scaled",
+  "HomeValue_scaled",
+  "Estimate Worked at home_scaled",
+  "Estimate Mean travel time to work (minutes)_scaled",
+  "Estimate Unpaid family workers_scaled",
+  "Estimate Median household income (dollars)_scaled",
+  "Estimate With health insurance coverage!!With private health insurance_scaled",
+  "Estimate No health insurance coverage_scaled",
+  "Opportunity_Zone_scaled",
+  "Other_Transportation_scaled",
+  "Blue_Collar_scaled",
+  "Govt_Benefits_scaled",
+  "Welfare_Benefits_scaled"
+)
+  
+# Summarize Deal Volume and select predictors
+town_volume <- d_modeling %>%
+  group_by(Town, lat.census.town, lon.census.town) %>%
+  summarize(
+    Deal_Volume = sum(Deal_Volume, na.rm = TRUE),
+    across(all_of(predictors_for_plotting), mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Reshape data to long format for faceting
+town_volume_long <- town_volume %>%
+  pivot_longer(
+    cols = all_of(predictors_for_plotting),
+    names_to = "Predictor",
+    values_to = "Value"
+  )
+
+ggplot(town_volume_long, aes(x = Value, y = Deal_Volume)) +
+  geom_point(alpha = 0.6, aes(color = Value)) +
+  geom_smooth(method = "loess", se = FALSE, color = "black") +
+  facet_wrap(~ Predictor, scales = "free_x") +
+  scale_y_log10() +
+  scale_color_viridis_c(option = "C") +
+  labs(
+    title = "Relationship Between Predictors and Deal Volume Across Towns",
+    x = "Scaled Predictor Value",
+    y = "Deal Volume (Log Scale)",
+    color = "Predictor Value"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 8),
+    axis.text = element_text(size = 6),
+    axis.title = element_text(size = 10),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  )
+ggsave(filename = "figures/fig11.png", plot = last_plot(), width = 12, height = 8, dpi = 300)
+
 #####
 #  LASSO Regression for Variable Selection
 ######
@@ -558,7 +799,8 @@ selected_predictors <- selected_predictors[selected_predictors != "(Intercept)"]
 print("Selected Predictors according to Lasso")
 print(selected_predictors)
 
-
+### keep this commented, shuffling variables 
+### doesn't provide much reduction of WAIC
 
 ######
 # Model Selection Using WAIC
@@ -694,7 +936,15 @@ best_set <- c(
 d_modeling <- d_modeling %>%
   drop_na(lon.census.town, lat.census.town)
 
+na_rows <- d_modeling %>%
+  select(all_of(best_set)) %>%
+  apply(1, function(x) any(is.na(x)))
+
+
+d_modeling <- d_modeling[!na_rows, ]
+
 y <- d_modeling$Deal_Volume
+
 
 # Convert to sf object with given CRS (assume WGS84 for lat/lon)
 d_sf <- st_as_sf(d_modeling, coords = c("lon.census.town", "lat.census.town"), crs = 4326)
@@ -716,6 +966,9 @@ mesh <- inla.mesh.2d(
   cutoff = 5000
 )
 
+plot(mesh)
+ggsave(filename = "figures/fig12.png", plot = last_plot(), width = 12, height = 8, dpi = 300)
+
 # Create SPDE model
 spde <- inla.spde2.pcmatern(
   mesh = mesh,
@@ -736,7 +989,6 @@ town_index <- data.frame(
 # Join the coordinate index back to d_modeling
 d_modeling <- d_modeling %>%
   left_join(town_index, by = "Town")
-
 
 # Create the A matrix for INLA
 A <- inla.spde.make.A(mesh, loc = coords[d_modeling$coord_index, ])
@@ -765,7 +1017,6 @@ stack <- inla.stack(
   tag = "data"
 )
 
-
 #########################
 ### RUN INLA MODEL ######
 #########################
@@ -776,8 +1027,7 @@ best_result <- inla(
   data = inla.stack.data(stack),
   family = "poisson",
   control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
-  control.compute = list(dic = TRUE, waic = TRUE),
-  verbose = TRUE
+  control.compute = list(dic = TRUE, waic = TRUE)
 )
 
 # Print summary of results
@@ -795,6 +1045,7 @@ ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = F
        x = "Observed Deal Volume",
        y = "Fitted Deal Volume") +
   theme_minimal()
+ggsave(filename = "figures/fig13.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 #### Some Visualizations ###################################################
 
@@ -835,7 +1086,6 @@ sd_df <- data.frame(
 )
 
 
-png("spatial_field_mean.png", width = 800, height = 600)
 ggplot(mean_df, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_viridis_c() +
@@ -846,13 +1096,9 @@ ggplot(mean_df, aes(x = x, y = y, fill = value)) +
     fill = "Latent Effect"
   ) +
   theme_minimal()
-dev.off()
-
-# Plot the mean
-
+ggsave(filename = "figures/fig14.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 # Plot the standard deviation
-png("spatial_field_sd.png", width = 800, height = 600)
 ggplot(sd_df, aes(x = x, y = y, fill = value)) +
   geom_tile() +
   scale_fill_viridis_c() +
@@ -863,6 +1109,7 @@ ggplot(sd_df, aes(x = x, y = y, fill = value)) +
     fill = "Latent Effect"
   ) +
   theme_minimal()
+ggsave(filename = "figures/fig15.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 ### Visualize Posterior Distribution of Predictors ###
 
@@ -875,25 +1122,13 @@ for (fn in fixed_names) {
        xlab = fn, ylab = "Density")
   abline(v = inla.emarginal(function(x) x, marginal), col = "red") # mean
 }
-
-#visualize difference between LA and SF
-# Extract marginal data for a specific predictor (example: "Opportunity_Zone_scaled")
-opportunity_zone_marginals <- best_result$marginals.fixed$Fed_Rate_scaled
-marginal_df <- as.data.frame(opportunity_zone_marginals)
-colnames(marginal_df) <- c("Value", "Density")
-
-# Add town labels (for illustrative purposes)
-marginal_df$Town <- ifelse(runif(nrow(marginal_df)) > 0.5, "San Diego", "San Francisco") # Replace with real labels
-
-# Plot density
-ggplot(marginal_df, aes(x = Value, y = Density, color = Town)) +
-  geom_line(size = 1) +
-  labs(
-    title = "Posterior Distribution for 'Opportunity_Zone_scaled'",
-    x = "Value",
-    y = "Density"
-  ) +
-  theme_minimal()
+for (fn in fixed_names) {
+  marginal <- best_result$marginals.fixed[[fn]]
+  plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
+       xlab = fn, ylab = "Density")
+  abline(v = inla.emarginal(function(x) x, marginal), col = "red") # mean
+  ggsave(filename = sprintf("figures/fig%d.png", 16 + which(fixed_names == fn)), width = 10, height = 6, dpi = 300)
+}
 
 # visualize temporal dependence
 best_result$summary.hyperpar
@@ -901,6 +1136,7 @@ best_result$summary.hyperpar
 rho_marginal <- best_result$marginals.hyperpar[["Rho for Period"]]
 plot(rho_marginal, type = "l", main = "Posterior of AR1 Rho", xlab = "Rho", ylab = "Density")
 abline(v = inla.emarginal(function(x) x, rho_marginal), col = "red") # Posterior mean
+ggsave(filename = "figures/fig23.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 # visualize spatial range
 range_marginal <- best_result$marginals.hyperpar[["Range for spatial.field"]]
@@ -912,6 +1148,7 @@ plot(range_marginal, type = "l",
      ylab = "Density")
 abline(v = inla.emarginal(function(x) x, range_marginal), col = "red", lty = 2, lwd = 2)
 legend("topright", legend = "Posterior Mean", col = "red", lty = 2, bty = "n")
+ggsave(filename = "figures/fig24.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 period_numeric <- d_modeling$Period_numeric
 index_est <- inla.stack.index(stack, tag = "data")$data
@@ -931,6 +1168,8 @@ ggplot(period_summary, aes(x = period_numeric, y = Fitted)) +
        x = "Time (Period Numeric)",
        y = "Fitted Deal Volume") +
   theme_minimal()
+ggsave(filename = "figures/fig25.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
 
 ###########################################################################
 
@@ -950,7 +1189,7 @@ for (col in setdiff(required_columns, colnames(d_modeling_future))) {
 
 d_modeling$Period <- as.Date(d_modeling$Period)
 # Step 3: Process Home Value data
-home_value_2024 <- read.csv("z_home_value_unique.csv") %>%
+home_value_2024 <- read.csv("Cleaneddata/z_home_value_unique.csv") %>%
   mutate(Date = as.Date(Date)) %>%
   filter(Date > as.Date("2023-06-01") & Date < as.Date("2024-01-01")) %>%
   group_by(City) %>%
@@ -966,7 +1205,7 @@ d_modeling_future <- d_modeling_future %>%
             by = "Town")
 
 # Step 4: Process Federal Rate data
-fed_2024 <- read.csv("fed_cleaned.csv") %>%
+fed_2024 <- read.csv("Cleaneddata/fed_cleaned.csv") %>%
   mutate(Date = as.Date(Date)) %>%
   filter(Date > as.Date("2023-06-01") & Date < as.Date("2024-01-01")) %>%
   summarize(Fed_Rate = mean(Rate, na.rm = TRUE)) %>%
@@ -977,49 +1216,90 @@ fed_2024 <- read.csv("fed_cleaned.csv") %>%
 # Assign Federal Rate data to `d_modeling_future`
 d_modeling_future$Fed_Rate_scaled <- rep(fed_2024$Fed_Rate_scaled, nrow(d_modeling_future))
 
+## Process BLS data
+
+bls <- read_excel("Rawdata/BLS_Rawdata.xlsx")
+
+# set colnames to be row three values
+colnames(bls) <- bls[2, ]
+# remove first three rows
+bls <- bls[-c(1:3), ]
+
+bls <- bls[bls$`ST FIPS Code` == "06", ]
+
+bls$Area <- gsub(",.*", "", bls$Area)
+
+
+bls <- bls %>% 
+  separate_rows(Area, sep = "-{1,2}") %>%
+  mutate(Area = trimws(Area))
+
+bls <- bls[!is.na(bls$Area), ]
+
+bls$Date <- as.Date(paste(bls$Year, bls$Month, "01", sep="-"), format = "%Y-%m-%d")
+bls$`Unemployment Rate` <- as.numeric(bls$`Unemployment Rate`)
+
+bls <- bls %>%
+  select(Area,`Unemployment Rate`, Date) %>% filter(Date > as.Date("2023-06-01") & Date < as.Date("2024-01-01")) %>% group_by(Area) %>% summarize(`Unemployment Rate` = mean(as.numeric(`Unemployment Rate`), na.rm = TRUE)) 
+
+nearest_matches <- read.csv("Cleaneddata/nearest_matches_bls.csv")
+nearest_matches$Town <- gsub(", CA", "", nearest_matches$Town)
+nearest_matches$Area <- gsub(", CA", "", nearest_matches$Area)
+
+d_modeling_future <- d_modeling_future %>%
+  left_join(nearest_matches, by = "Town") %>%
+  left_join(bls, by = c("Area" = "Area"))
+
+d_modeling_future$Unemployment_Rate_scaled <- scale(d_modeling_future$`Unemployment Rate`, center = mean(d_modeling$Unemployment_Rate, na.rm = TRUE),
+                                                    scale = sd(d_modeling$Unemployment_Rate, na.rm = TRUE))
+
 # Define predictors to keep the same as 2023-01-01
-predictors_constant <- c(
-  "Residential_Percentage", "Industrial_Percentage",
-  "Office_Percentage", "Other_Percentage", "Retail_Percentage",
-  "Total_Size_Sq_Ft", "Opportunity_Zone"
-)
+predictors_constant <- c("Opportunity_Zone_scaled")
 
-# Define predictors to use median growth rate
 predictors_median_growth <- c(
-  "Estimate.Worked.at.home", "Welfare_Benefits_raw", "Other_Services_raw",
-  "Govt_Benefits_raw", "Estimate.No.health.insurance.coverage",
-  "Estimate.Unpaid.family.workers", "Estimate.Mean.travel.time.to.work..minutes."
+  "Estimate.Worked.at.home", 
+  "Welfare_Benefits_raw", 
+  "Other_Transportation_raw",
+  "Estimate.Median.household.income..dollars.",
+  "Govt_Benefits_raw", 
+  "Estimate.No.health.insurance.coverage",
+  "Estimate.Unpaid.family.workers", 
+  "Estimate.Mean.travel.time.to.work..minutes.",
+  "Estimate.With.health.insurance.coverage.With.private.health.insurance",
+  "Estimate.No.health.insurance.coverage", 
+  "Blue_Collar_raw"
 )
 
+# Step 1: Calculate Growth Rates
 growth_data_per_town <- d_modeling %>%
   filter(Period %in% as.Date(c("2018-01-01", "2023-01-01"))) %>%
   select(Town, Period, all_of(predictors_median_growth)) %>%
-  pivot_wider(names_from = Period, values_from = all_of(predictors_median_growth), 
-              names_sep = "_Value_") %>%
+  pivot_wider(
+    names_from = Period, 
+    values_from = all_of(predictors_median_growth), 
+    names_sep = "_Value_"
+  ) %>%
+  # Replace NA with 0 for both periods
   mutate(across(ends_with("_Value_2018-01-01"), ~ replace_na(., 0))) %>%
-  mutate(across(ends_with("_Value_2023-01-01"), ~ replace_na(., 0))) %>%
-  rowwise() %>%
-  mutate(across(all_of(predictors_median_growth), ~ {
-    start_col <- paste0(cur_column(), "_Value_2018-01-01")
-    end_col <- paste0(cur_column(), "_Value_2023-01-01")
-    start_value <- cur_data()[[start_col]]
-    end_value <- cur_data()[[end_col]]
-    
-    if (abs(start_value) < 1e-6) {
-      if (abs(end_value) < 1e-6) {
-        return(0)  # Zero growth if both are zero
-      } else {
-        return(NA) # Mark as needing median assignment
-      }
-    }
-    
-    growth_rate <- (end_value - start_value) / abs(start_value)
-    
-    return(growth_rate)
-  }, .names = "GrowthRate_{col}")) %>%
-  ungroup()
+  mutate(across(ends_with("_Value_2023-01-01"), ~ replace_na(., 0)))
 
-# Reshape growth_data_per_town to long format for easier processing
+for (predictor in predictors_median_growth) {
+  start_col <- paste0(predictor, "_Value_2018-01-01")
+  end_col <- paste0(predictor, "_Value_2023-01-01")
+  growth_col <- paste0("GrowthRate_", predictor)
+  
+  # Compute growth rate with handling for zero start values
+  growth_data_per_town <- growth_data_per_town %>%
+    mutate(
+      !!growth_col := case_when(
+        abs(.data[[start_col]]) < 1e-6 & abs(.data[[end_col]]) < 1e-6 ~ 0,
+        abs(.data[[start_col]]) < 1e-6 & abs(.data[[end_col]]) >= 1e-6 ~ NA_real_,
+        TRUE ~ (.data[[end_col]] - .data[[start_col]]) / abs(.data[[start_col]])
+      )
+    )
+}
+
+# Step 2: Reshape and Adjust Growth Rates
 growth_long <- growth_data_per_town %>%
   select(Town, starts_with("GrowthRate_")) %>%
   pivot_longer(
@@ -1030,7 +1310,6 @@ growth_long <- growth_data_per_town %>%
   )
 
 # Identify extreme outliers per predictor
-# Define what constitutes an extreme outlier, e.g., beyond 1.5 * IQR from Q1 and Q3
 growth_long <- growth_long %>%
   group_by(Predictor) %>%
   mutate(
@@ -1065,56 +1344,73 @@ growth_long <- growth_long %>%
 # Reshape back to wide format with adjusted growth rates
 adjusted_growth_data <- growth_long %>%
   select(Town, Predictor, Adjusted_GrowthRate) %>%
-  pivot_wider(names_from = Predictor, values_from = Adjusted_GrowthRate, 
-              names_prefix = "GrowthRate_")
+  pivot_wider(
+    names_from = Predictor, 
+    values_from = Adjusted_GrowthRate, 
+    names_prefix = "GrowthRate_"
+  )
 
-# Ensure column names match the predictors_median_growth
-adjusted_growth_data <- adjusted_growth_data %>%
-  rename_with(~ gsub("GrowthRate_", "", .), starts_with("GrowthRate_"))
+# Step 3: Define `latest_values` for "2023-01-01"
+latest_values <- d_modeling %>%
+  filter(Period == as.Date("2023-01-01")) %>%
+  select(Town, all_of(predictors_constant), all_of(predictors_median_growth))
 
-# Step 4: Project 2024 values using adjusted growth rates
+# Handle missing values if any
+latest_values <- latest_values %>%
+  mutate(across(all_of(predictors_median_growth), ~ replace_na(.x, 0)))
 
-# Merge the adjusted growth rates with the latest_values
+# Step 4: Merge `latest_values` with `adjusted_growth_data`
 projected_values <- latest_values %>%
-  left_join(adjusted_growth_data, by = "Town") %>%
+  left_join(adjusted_growth_data, by = "Town")
+
+# Step 5: Project 2024 Values
+# Project constant predictors (keep them the same)
+projected_values <- projected_values %>%
+  mutate(across(all_of(predictors_constant), ~ .x, .names = "{col}_projected"))
+
+# Project median growth predictors
+projected_values <- projected_values %>%
   mutate(across(
-    all_of(predictors_constant),
-    ~ .x, # Keep constant values as is
-    .names = "{col}_projected"
-  )) %>%
-  mutate(across(
-    all_of(predictors_median_growth),
-    ~ .x * (1 + get(.x)), # Use the adjusted growth rate
+    .cols = all_of(predictors_median_growth),
+    .fns = ~ .x * (1 + get(paste0("GrowthRate_", cur_column()))),
     .names = "{col}_projected"
   ))
 
-# Normalize projected values and map to '_scaled'
+# Handle NAs in projected growth rates (optional)
+projected_values <- projected_values %>%
+  mutate(across(
+    .cols = all_of(predictors_median_growth),
+    .fns = ~ ifelse(is.na(get(paste0("GrowthRate_", cur_column()))), .x, .x),
+    .names = "{col}_projected"
+  ))
+
+# Step 6: Scale Projected Values
 projected_normalized <- projected_values %>%
-  mutate(across(ends_with("_projected"), ~ scale(.x, center = mean(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE),
-                                                 scale = sd(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE)),
-                .names = "{col}_scaled")) %>%
+  mutate(across(
+    ends_with("_projected"), 
+    ~ as.numeric(scale(.x, 
+                       center = mean(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE),
+                       scale = sd(d_modeling[[gsub("_projected", "", cur_column())]], na.rm = TRUE))),
+    .names = "{col}_scaled"
+  )) %>%
   select(Town, ends_with("_scaled"))
 
-# Join projected values to `d_modeling_future`
+# Merge with projected_normalized
 d_modeling_future <- d_modeling_future %>%
   left_join(projected_normalized, by = "Town")
 
 
 # Select relevant columns and clean column names
-# Select relevant columns and clean column names
 d_modeling_future <- d_modeling_future %>%
   select(
     Town, Period, 
-    Fed_Rate_scaled, HomeValue_scaled.y, 
-    Residential_Percentage_projected_scaled, Other_Percentage_projected_scaled,     
-    Industrial_Percentage_projected_scaled, Office_Percentage_projected_scaled, 
-    Retail_Percentage_projected_scaled, Total_Size_Sq_Ft_projected_scaled, 
-    Opportunity_Zone_projected_scaled, Estimate.Worked.at.home_projected_scaled, 
-    Welfare_Benefits_raw_projected_scaled, Other_Services_raw_projected_scaled, 
-    Govt_Benefits_raw_projected_scaled, 
+    Fed_Rate_scaled, Unemployment_Rate_scaled, HomeValue_scaled.y, 
+    Opportunity_Zone_scaled.y, Estimate.Worked.at.home_projected_scaled, 
+    Welfare_Benefits_raw_projected_scaled, Other_Transportation_raw_projected_scaled,
+    Govt_Benefits_raw_projected_scaled, Estimate.With.health.insurance.coverage.With.private.health.insurance_projected_scaled,
     Estimate.No.health.insurance.coverage_projected_scaled, 
     Estimate.Unpaid.family.workers_projected_scaled, 
-    Estimate.Mean.travel.time.to.work..minutes._projected_scaled
+    Estimate.Mean.travel.time.to.work..minutes._projected_scaled, Blue_Collar_raw_projected_scaled, Estimate.Median.household.income..dollars._projected_scaled
   ) %>%
   rename_with(
     ~ gsub("_raw", "", .), 
@@ -1176,48 +1472,194 @@ prediction_result <- inla(
   formula,
   data = inla.stack.data(stack_combined),
   family = "poisson",
-  control.predictor = list(A = inla.stack.A(stack_combined), compute = TRUE, link = 1),
+  control.predictor = list(A = inla.stack.A(stack_combined), compute = TRUE, link=1),
   control.compute = list(dic = TRUE, waic = TRUE)  # Disable diagnostics for predictions
 )
 
-# Extract predictions
+
+# get predictions
+# note, these are on the count scale, not the log scale
+
 index_future <- inla.stack.index(stack_combined, tag = "future")$data
 future_predictions <- prediction_result$summary.fitted.values[index_future, ]
 
-summary(future_predictions)
 # Add predictions to `d_modeling_future`
 d_modeling_future <- d_modeling_future %>%
   mutate(
-    Predicted_Mean = exp(future_predictions$mean),
-    Predicted_SD = exp(future_predictions$sd),  # Note: This is not standard deviation in count space but transformed
-    Predicted_Lower = exp(future_predictions$`0.025quant`),
-    Predicted_Upper = exp(future_predictions$`0.975quant`)
+    Predicted_Mean = future_predictions$mean,
+    Predicted_SD = future_predictions$sd,
+    Predicted_Lower = future_predictions$`0.025quant`,
+    Predicted_Upper = future_predictions$`0.975quant`
   )
 
-# Inspect transformed predictions
-head(d_modeling_future)
-
-# Inspect the predicted results
-head(d_modeling_future)
-d_modeling_future %>% select(Town, Period, Predicted_Mean, Predicted_Lower, Predicted_Upper)
-
-
-# Extract the indices for the original data from the INLA stack
 index_original <- inla.stack.index(stack, tag = "data")$data
 
-# Extract the fitted values from the INLA model
-# These are typically on the log scale for a Poisson model
 fitted_values <- best_result$summary.fitted.values[index_original, ]
 
-# Transform predictions to the response scale (exponentiation)
-d_modeling <- d_modeling %>%
-  mutate(
-    Predicted_Mean = fitted_values$mean,
-    Predicted_Lower = fitted_values$`0.025quant`,
-    Predicted_Upper = fitted_values$`0.975quant`
+
+
+#### compare with actual deal data ####
+
+d <- read_excel("Rawdata/Preqin_Rawdata.xlsx")
+d <- data.frame(d)
+columns_to_check <- c(
+  "DEAL.NAME", "DEAL.DATE", "DEAL.TYPE", "PRIMARY.LOCATION", "PRIMARY.ASSET.TYPE", 
+  "DEAL.OVERVIEW", "INVESTORS...BUYERS..FIRMS.", "BOUGHT.FROM...SELLERS..FIRMS.", 
+  "ASSET.REGIONS", "ASSET.COUNTRIES", "ASSET.STATES", 
+  "ASSET.CITIES", "ASSETS.TYPES", "ASSETS", "BUYER.TYPE", "SELLER.TYPE"
+)
+
+# omit rows with NA in the specified columns
+d_cleaned <- d[complete.cases(d[, columns_to_check]), ]
+columns_to_add_back <- c("DEAL.SIZE..USD.MN.", "NO..OF.ASSETS", "TOTAL.SIZE..SQ..FT..")
+d_final <- d_cleaned[, c(columns_to_check, columns_to_add_back)]
+# clean column names
+clean_colnames <- function(col_names) {
+  col_names <- gsub("\\.+", ".", col_names)
+  col_names <- sapply(strsplit(col_names, "\\."), function(parts) {
+    parts <- str_to_title(parts)
+    paste(parts, collapse = ".")
+  })
+  return(col_names)
+}
+colnames(d_final) <- clean_colnames(colnames(d_final))
+# get only california
+ca = d_final[d_final$Asset.States == "CA", ]
+# keep only first location for each deal
+ca$Asset.Cities <- gsub(",.*", "", ca$Asset.Cities)
+# misc fix
+ca[ca$Asset.Cities == "Palo Alta", "Asset.Cities" ] <- "Palo Alto"
+ca$Deal.Date <- as.Date(ca$Deal.Date, format = "%m/%d/%Y")
+ca <- ca %>% filter(Deal.Date > as.Date("2023-06-01") & Deal.Date < as.Date("2024-01-01"))
+nearest_matches_deal <- read.csv("Cleaneddata/nearest_matches_deal.csv") %>% select(Town, Asset.Cities)
+
+ca <- ca %>% left_join(nearest_matches_deal, by = c("Asset.Cities" = "Asset.Cities"))
+town_deal_data <- ca %>% group_by(Town) %>% summarize(Deal_Volume = n())
+all_towns <- d_modeling_future %>%
+  select(Town) %>%
+  distinct()
+
+town_deal_data_complete <- all_towns %>%
+  left_join(town_deal_data, by = "Town") %>%
+  mutate(Deal_Volume = replace_na(Deal_Volume, 0))
+
+
+### make some plots
+### Chat-GPT used for most syntax here
+
+unique_coords <- d_modeling %>%
+  select(Town, lat.census.town, lon.census.town) %>%
+  distinct(Town, .keep_all = TRUE)
+d_modeling_future_plotting <- d_modeling_future %>%
+  left_join(unique_coords, by = "Town")
+
+# merge predicted and actual deal volumes
+comparison_data <- d_modeling_future_plotting %>%
+  select(Town, Predicted_Mean, Predicted_SD, Predicted_Lower, Predicted_Upper, lat.census.town, lon.census.town) %>%
+  left_join(town_deal_data_complete, by = "Town") %>%
+  rename(Actual_Deals = Deal_Volume) %>%
+  mutate(Actual_Deals = replace_na(Actual_Deals, 0))
+
+comparison_data_positive <- comparison_data %>%
+  filter(Actual_Deals > 0)
+
+comparison_data_ordered <- comparison_data_positive %>%
+  arrange(Predicted_Mean) %>%
+  mutate(Town = factor(Town, levels = Town))
+
+predicted_means_plot <- ggplot(comparison_data_ordered, aes(x = Predicted_Mean, y = Town)) +
+  geom_point(color = "blue", size = 2) +
+  geom_errorbarh(aes(xmin = Predicted_Lower, xmax = Predicted_Upper), height = 0.2, color = "blue") +
+  labs(
+    title = "Predicted Deal Volumes by Town with 95% Credible Intervals",
+    x = "Predicted Deal Volume",
+    y = "Town"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.y = element_text(size = 6)
   )
 
-# Display the updated dataset with predictions
-head(d_modeling) %>% select(Town, Period, Predicted_Mean, Predicted_Lower, Predicted_Upper)
+# Display the Predicted Means Plot
+print(predicted_means_plot)
+ggsave(filename = "figures/fig26.png", plot = predicted_means_plot, width = 10, height = 6, dpi = 300)
 
 
+bar_chart_data <- comparison_data_positive %>%
+  select(Town, Predicted_Mean, Predicted_Upper, Actual_Deals) %>%
+  pivot_longer(
+    cols = c(Predicted_Mean, Predicted_Upper, Actual_Deals),
+    names_to = "Type",
+    values_to = "Deal_Count"
+  )
+
+bar_chart <- ggplot(bar_chart_data, aes(x = reorder(Town, -Deal_Count), y = Deal_Count, fill = Type)) +
+  geom_col(position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Predicted Means, Predicted Upper Quartile vs Actual Deals by Town",
+    x = "Town",
+    y = "Deal Volume",
+    fill = "Deal Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.title = element_text(face = "bold")
+  )
+
+print(bar_chart)
+ggsave(filename = "figures/fig27.png", plot = bar_chart, width = 10, height = 6, dpi = 300)
+
+
+comparison_data_map <- comparison_data_positive %>%
+  mutate(
+    Color = case_when(
+      Actual_Deals > Predicted_Upper ~ "red",
+      Actual_Deals < Predicted_Upper ~ "green",
+      TRUE ~ "gray"
+    )
+  )
+
+# map plot to visualize predicted deal volume
+map_plot <- ggplot() +
+  # Base California map
+  geom_polygon(data = california_map, aes(x = long, y = lat, group = group),
+               fill = "gray95", color = "white") +
+  # Points for predicted and actual deal comparison
+  geom_point(data = comparison_data_map, 
+             aes(x = lon.census.town, y = lat.census.town, size = Predicted_Upper, color = Color),
+             alpha = 0.7) +
+  scale_color_manual(
+    values = c("red" = "red", "green" = "green", "gray" = "gray"),
+    labels = c("Actual > Predicted Upper", "Actual < Predicted Upper", "Actual = Predicted Upper")
+  ) +
+  scale_size_continuous(
+    range = c(2, 6),
+    name = "Predicted Upper Quartile"
+  ) +
+  labs(
+    title = "Map of California: Predicted Upper Quartile Deal Volumes",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Deal Comparison"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  coord_fixed(1.3) +
+  # Add labels for towns where Actual > Predicted Upper (Red) and Actual < Predicted Upper (Green)
+  geom_text_repel(
+    data = subset(comparison_data_map, Color == "red" | Color == "green"),
+    aes(x = lon.census.town, y = lat.census.town, label = Town),
+    size = 3,
+    max.overlaps = 20
+  )
+
+# Display the Updated Map Plot
+print(map_plot)
+ggsave(filename = "figures/fig28.png", plot = map_plot, width = 10, height = 6, dpi = 300)

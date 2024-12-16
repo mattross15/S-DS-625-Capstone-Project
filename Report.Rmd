@@ -21,6 +21,10 @@ knitr::opts_chunk$set(echo   =FALSE,      ## show or suppress the code
 ```
 
 ## Abstract
+
+Opportunistic real estate investors look to flex into markets that 
+
+
 An overview of your report, including one or so sentences on each of these:
 
 - a non-technical description of the problem you are trying to solve or the question you are trying to answer, and why you are trying to answer that question

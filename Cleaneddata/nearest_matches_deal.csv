@@ -1,0 +1,321 @@
+"","Town","Asset.Cities","distance"
+"1","Thousand Oaks","Agoura Hills",7089.33741598777
+"2","Thousand Oaks","Agoura",9656.72816274234
+"3","Alameda","Alameda",0
+"4","Walnut Creek","Alamo",7128.13170144807
+"5","Laguna Niguel","Aliso Viejo",6203.77485823547
+"6","Rancho Cucamonga","Alta Loma",3065.59400227191
+"7","Vallejo","American Canyon",8287.42214304682
+"8","Anaheim","Anaheim",0
+"9","Redding","Anderson",17318.803181481
+"10","Modesto","Angels Camp",62472.8499423153
+"11","Antioch","Antioch",0
+"12","Santa Cruz","Aptos",10872.3578131587
+"13","Rocklin","Auburn",18178.4796216724
+"14","West Covina","Azusa",7887.70871170253
+"15","Bakersfield","Bakersfield",0
+"16","Apple Valley","Barstow",46681.850095761
+"17","Santa Monica","Bel Air",8093.01483596908
+"18","Downey","Bell Gardens",3772.27844991247
+"19","Bellflower","Bellflower",0
+"20","San Mateo","Belmont",4066.28986105001
+"21","Berkeley","Berkeley",0
+"22","Turlock","Berkley",24532.7352122799
+"23","Santa Monica","Beverly Hills",10385.6228054185
+"24","Fullerton","Brea",6365.80662181349
+"25","Brentwood","Brentwood",0
+"26","South San Francisco","Brisbane",3943.12235999906
+"27","Buena Park","Buena Park",0
+"28","Burbank","Burbank",0
+"29","San Mateo","Burlingame",9125.44855562721
+"30","Simi Valley","Calabasas",17021.3614969396
+"31","Indio","Calipatria",93036.1050667274
+"32","Santa Rosa","Calistoga",19341.5471319641
+"33","Camarillo","Camarillo",0
+"34","Folsom","Cameron Park",16596.7779068309
+"35","San Jose","Campbell",7279.00912043171
+"36","Simi Valley","Canoga Park",16159.8545002868
+"37","Santa Cruz","Capitola",8834.23962478692
+"38","Carlsbad","Carlsbad",0
+"39","Salinas","Carmel",27392.9381762567
+"40","Santa Barbara","Carpinteria",17114.6391253659
+"41","Carson","Carson",0
+"42","Castro Valley","Castro Valley",0
+"43","Indio","Cathedral City",25731.6835712624
+"44","Modesto","Ceres",6031.21690053206
+"45","Buena Park","Cerritos",5376.20399819939
+"46","Simi Valley","Chatsworth",14042.5780542283
+"47","Chico","Chico",0
+"48","Chino Hills","Chino Hills",0
+"49","Chino","Chino",0
+"50","Chula Vista","Chula Vista",0
+"51","Citrus Heights","Citrus Heights",0
+"52","West Covina","City Industry",5915.82288827933
+"53","West Covina","City of Industry",5915.82288827933
+"54","Pomona","Claremont",5460.96124647294
+"55","Santa Rosa","Clearlake",58136.1599727612
+"56","Rialto","Colton",6354.61524641307
+"57","Yuba City","Colusa",52155.0667080175
+"58","East Los Angeles","Commerce",2829.27931289063
+"59","Compton","Compton",0
+"60","Concord","Concord",0
+"61","Chico","Corning",36670.9632400081
+"62","Corona","Corona",0
+"63","San Diego","Coronado",3164.44882510678
+"64","Costa Mesa","Costa Mesa",0
+"65","West Covina","Covina",5066.4819829984
+"66","Inglewood","Culver City",8260.07561074254
+"67","Sunnyvale","Cupertino",5126.25418308447
+"68","Daly City","Daly City",0
+"69","Laguna Niguel","Dana Point",6246.09281504909
+"70","San Ramon","Danville",7617.86295693804
+"71","Davis","Davis",0
+"72","San Marcos","Del Mar",21332.8448577993
+"73","Chino Hills","Diamond Bar",6126.63680051626
+"74","Davis","Dixon",13159.0822366748
+"75","Downey","Downey",0
+"76","Dublin","Dublin",0
+"77","Palo Alto","East Palo Alto",3191.96760059976
+"78","Compton","East Rancho Dominguez",2911.03152105572
+"79","Eastvale","Eastvale",0
+"80","El Cajon","El Cajon",0
+"81","El Monte","El Monte",0
+"82","Hawthorne","El Segundo",6761.94191929568
+"83","Elk Grove","Elk Grove",0
+"84","Oakland","Emeryville",3283.63513843275
+"85","Carlsbad","Encinitas",14547.5529015357
+"86","Santa Monica","Encino",15576.5796594465
+"87","Escondido","Escondido",0
+"88","Carmichael","Fair Oaks",6838.40456009733
+"89","Fairfield","Fairfield",0
+"90","Visalia","Farmersville",8462.13915403802
+"91","Folsom","Folsom",0
+"92","Fontana","Fontana",0
+"93","Redwood City","Foster City",8809.9409884193
+"94","Huntington Beach","Fountain Valley",4468.7234627729
+"95","Fremont","Fremont",0
+"96","Fresno","Fresno",0
+"97","Fullerton","Fullerton",0
+"98","Garden Grove","Garden Grove",0
+"99","Hawthorne","Gardena",5842.98526377452
+"100","Salinas","Gilroy",37863.8449913183
+"101","Glendale","Glendale",0
+"102","Santa Barbara","Goleta",11575.7102331095
+"103","Yuba City","Grass Valley",48598.8899732675
+"104","Richmond","Greenbrae",15599.8921889675
+"105","Salinas","Greenfield",53886.041834241
+"106","Visalia","Hanford",31757.4494637501
+"107","Torrance","Harbor City",6326.16965084961
+"108","Hawthorne","Hawthorne",0
+"109","Hayward","Hayward",0
+"110","Hemet","Hemet",0
+"111","Redondo Beach","Hermosa Beach",2989.46596057928
+"112","Hesperia","Hesperia",0
+"113","Salinas","Hollister",30060.4586874204
+"114","Glendale","Hollywood",9291.48460353399
+"115","Rocklin","Homewood",98792.3866928216
+"116","Huntington Beach","Huntington Beach",0
+"117","Fresno","Huron",66208.1631097909
+"118","Indio","Indian Wells",11067.8929083113
+"119","Indio","Indio",0
+"120","Inglewood","Inglewood",0
+"121","Irvine","Irvine",0
+"122","Baldwin Park","Irwindale",4187.52250444297
+"123","Jurupa Valley","Jurupa Valley",0
+"124","Fresno","Kerman",24605.7149897237
+"125","Salinas","King City",69672.0135319979
+"126","Folsom","Kyburz",77108.4339061266
+"127","Fullerton","La Habra",6927.56937581967
+"128","San Diego","La Jolla",17181.9161104482
+"129","El Cajon","La Mesa",6412.42306022713
+"130","South Whittier","La Mirada",3792.39127659957
+"131","Buena Park","La Palma",5380.3681240264
+"132","Indio","La Quinta",7538.6854992345
+"133","Walnut Creek","Lafayette",5256.36680373974
+"134","Laguna Niguel","Laguna Beach",7561.6163272244
+"135","Mission Viejo","Laguna Hills",2677.27592612125
+"136","Lake Forest","Lake Forest",0
+"137","Lancaster","Lake Hughes",28659.7538195785
+"138","Lakewood","Lakewood",0
+"139","Lancaster","Lancaster",0
+"140","Richmond","Larkspur",16463.8237204185
+"141","El Cajon","Lemon Grove",8682.02310759657
+"142","Visalia","Lemoore",44133.5388078207
+"143","Rocklin","Lincoln",12279.1848940251
+"144","Tulare","Lindsay",21836.5601917125
+"145","Yuba City","Live Oak",15510.0688414273
+"146","Livermore","Livermore",0
+"147","Santa Maria","Lompoc",35010.0684295754
+"148","Long Beach","Long Beach",0
+"149","Lakewood","Los Alamitos",6355.73214687344
+"150","Mountain View","Los Altos",3167.41285003566
+"151","Los Angeles","Los Angeles",0
+"152","Merced","Los Banos",13794.9878439947
+"153","Lynwood","Lynwood",0
+"154","Santa Monica","Malibu",18373.0354699023
+"155","Hawthorne","Manhattan Beach",5358.29134365546
+"156","San Francisco","Marin City",12809.048562409
+"157","Santa Monica","Marina del Rey",6089.28562508967
+"158","Salinas","Marina",13182.8846219494
+"159","Concord","Martinez",9717.59939794339
+"160","Carlsbad","McClellan",7291.25770381847
+"161","Indio","Mecca",21030.0447120437
+"162","Menifee","Menifee",0
+"163","Palo Alto","Menlo Park",1815.09696854992
+"164","Merced","Merced",0
+"165","Richmond","Mill Valley",17632.869466491
+"166","South San Francisco","Millbrae",6236.19412006966
+"167","Milpitas","Milpitas",0
+"168","Mission Viejo","Mission Viejo",0
+"169","Modesto","Modesto",0
+"170","East Los Angeles","Montebello",5610.12506093345
+"171","Simi Valley","Moorpark",11961.4049762738
+"172","Moreno Valley","Moreno Valley",0
+"173","San Jose","Morgan Hill",31024.0201316895
+"174","Santa Maria","Morro Bay",59416.4387470369
+"175","Redding","Mount Shasta",93078.7248230837
+"176","Mountain View","Mountain View",0
+"177","Murrieta","Murrieta",0
+"178","Napa","Napa",0
+"179","Fremont","Newark",5009.26814337427
+"180","Newport Beach","Newport Beach",0
+"181","Burbank","North Hills",17787.0796190798
+"182","Burbank","North Hollywood",6479.33804604652
+"183","Santa Clarita","Northridge",19901.5837465493
+"184","Norwalk","Norwalk",0
+"185","Richmond","Novato",27082.5823967025
+"186","Oakland","Oakland",0
+"187","Oceanside","Oceanside",0
+"188","Ontario","Ontario",0
+"189","Orange","Orange",0
+"190","Oxnard","Oxnard",0
+"191","South San Francisco","Pacifica",9554.24306787202
+"192","Indio","Palm Desert",15336.4635500542
+"193","Indio","Palm Springs",31977.7068897176
+"194","Indio","Palm springs",31977.7068897176
+"195","Palmdale","Palmdale",0
+"196","Palo Alto","Palo Alto",0
+"197","Burbank","Panorama City",13595.2059313547
+"198","Lynwood","Paramount",4091.72049538665
+"199","Pasadena","Pasadena",0
+"200","Santa Maria","Paso Robles",78413.7146911366
+"201","Perris","Perris",0
+"202","Santa Rosa","Petaluma",24116.8248942845
+"203","Downey","Pico Rivera",5616.61951095436
+"204","Richmond","Pinole",8760.08572744894
+"205","Pittsburg","Pittsburg",0
+"206","Yuba City","Pittsburgh",60987.0368122562
+"207","Yorba Linda","Placentia",3980.39606312846
+"208","Inglewood","Playa Del Rey",7914.22698256415
+"209","Inglewood","Playa del Rey",7914.22698256415
+"210","Concord","Pleasant Hill",4005.54023202396
+"211","Pleasanton","Pleasanton",0
+"212","Santa Rosa","Point Arena",99780.3248869165
+"213","Pomona","Pomona",0
+"214","Tulare","Porterville",25463.6757247689
+"215","Escondido","Poway",18188.5129941475
+"216","Rancho Cordova","Rancho Cordova",0
+"217","Rancho Cucamonga","Rancho Cucamonga",0
+"218","Compton","Rancho Dominguez",4042.43846687023
+"219","Indio","Rancho Mirage",19249.9906741475
+"220","Torrance","Rancho Palos Verdes",10253.5846973293
+"221","Redding","Redding",0
+"222","Redlands","Redlands",0
+"223","Redondo Beach","Redondo Beach",0
+"224","Redwood City","Redwood City",0
+"225","Rialto","Rialto",0
+"226","Richmond","Richmond",0
+"227","Riverside","Riverside",0
+"228","Rocklin","Rocklin",0
+"229","Santa Rosa","Rohnert Park",11284.4292385879
+"230","Torrance","Rolling Hills Estates",5707.78444393734
+"231","Roseville","Roseville",0
+"232","Sacramento","Sacramento",0
+"233","Salinas","Salinas",0
+"234","San Bernardino","San Bernardino",0
+"235","South San Francisco","San Bruno",3199.63991956789
+"236","Redwood City","San Carlos",3315.03252553913
+"237","San Clemente","San Clemente",0
+"238","San Diego","San Diego",0
+"239","Pomona","San Dimas",7636.93666624226
+"240","Burbank","San Fernando",16660.1144072311
+"241","San Francisco","San Francisco",0
+"242","San Jose","San Jose",0
+"243","Laguna Niguel","San Juan Capistrano",4777.45760840733
+"244","San Leandro","San Leandro",0
+"245","Santa Maria","San Luis Obispo",44961.4688386218
+"246","San Marcos","San Marcos",0
+"247","San Mateo","San Mateo",0
+"248","Richmond","San Pablo",2943.97673011498
+"249","Long Beach","San Pedro",10024.0464372656
+"250","Richmond","San Rafael",16717.7389106919
+"251","San Ramon","San Ramon",0
+"252","Santa Ana","Santa Ana",0
+"253","Santa Barbara","Santa Barbara",0
+"254","Santa Clara","Santa Clara",0
+"255","Santa Clarita","Santa Clarita",0
+"256","Santa Cruz","Santa Cruz",0
+"257","South Whittier","Santa Fe Springs",3936.13078345168
+"258","Santa Maria","Santa Maria",0
+"259","Santa Monica","Santa Monica",0
+"260","Santa Rosa","Santa Rosa",0
+"261","El Cajon","Santee",4970.19461578174
+"262","Santa Cruz","Scotts Valley",2143.30535015419
+"263","Long Beach","Seal Beach",8494.22873619713
+"264","Redding","Shasta Lake",10704.9335048901
+"265","Burbank","Sherman Oaks",13489.0136292437
+"266","Simi Valley","Simi Valley",0
+"267","San Marcos","Solana Beach",18379.7369998248
+"268","Santa Rosa","Sonoma",14020.1408574122
+"269","South Gate","South Gate",0
+"270","Alhambra","South Pasadena",2958.6474590986
+"271","South San Francisco","South San Francisco",0
+"272","Palo Alto","Southgate",1442.86087007529
+"273","El Cajon","Spring Valley",7269.80493442592
+"274","Westminster","Stanton",4121.94257280874
+"275","Stockton","Stockton",0
+"276","Burbank","Studio City",8973.38329381479
+"277","Fairfield","Suisun City",1237.07625377386
+"278","Burbank","Sun Valley",8616.9241642288
+"279","Sunnyvale","Sunnyvale",0
+"280","Santa Clarita","Sylmar",15147.657266896
+"281","Santa Monica","Tarzana",17154.601236988
+"282","Lancaster","Tehachapi",56106.6338555203
+"283","Temecula","Temecula",0
+"284","Santa Maria","Templeton",71775.415475628
+"285","Thousand Oaks","Thousand Oaks",0
+"286","Torrance","Torrance",0
+"287","Tracy","Tracy",0
+"288","Tulare","Tulare",0
+"289","Turlock","Turlock",0
+"290","Tustin","Tustin",0
+"291","Santa Rosa","Ukiah",89864.4524239125
+"292","Union City","Union City",0
+"293","Burbank","Universal City",6432.47998325379
+"294","Upland","Upland",0
+"295","Vacaville","Vacaville",0
+"296","Santa Clarita","Valencia",556.478280276756
+"297","Vallejo","Vallejo",0
+"298","Burbank","Valley Village",8458.67412546721
+"299","Burbank","Van Nuys",13041.2458798283
+"300","Santa Monica","Venice",3526.81798107049
+"301","Camarillo","Ventura",25661.0149804127
+"302","Florence-Graham","Vernon",3948.80226333543
+"303","Visalia","Visalia",0
+"304","Vista","Vista",0
+"305","Walnut Creek","Walnut Creek",0
+"306","Bakersfield","Wasco",38083.2593620402
+"307","Bakersfield","Weedpatch",17849.3040893824
+"308","West Covina","West Covina",0
+"309","Burbank","West Hollywood",11431.5610872922
+"310","Sacramento","West Sacramento",3162.98890106036
+"311","Thousand Oaks","Westlake Village",3979.3084059343
+"312","Indio","Westmorland",94064.5895839532
+"313","Whittier","Whittier",0
+"314","Murrieta","Wildomar",4665.15180644741
+"315","Carson","Wilmington",5894.07986497725
+"316","Santa Rosa","Windsor",14843.4704834812
+"317","Simi Valley","Woodland Hills",17542.0052314419
+"318","Napa","Yountville",10296.6754550408
+"319","Yuba City","Yuba City",0
+"320","Redlands","Yucaipa",13100.6083945227
