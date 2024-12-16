@@ -33,22 +33,23 @@ d_final <- d_cleaned[, c(columns_to_check, columns_to_add_back)]
 
 # clean column names
 clean_colnames <- function(col_names) {
-  col_names <- gsub("\\.+", " ", col_names)  # Replace multiple dots with spaces
-  col_names <- gsub("\\.$", "", col_names)   # Remove trailing dots
-  col_names <- str_to_title(col_names)       # Convert to title case
+  col_names <- gsub("\\.+", ".", col_names)
+  col_names <- sapply(strsplit(col_names, "\\."), function(parts) {
+    parts <- str_to_title(parts)
+    paste(parts, collapse = ".")
+  })
   return(col_names)
 }
 
 colnames(d_final) <- clean_colnames(colnames(d_final))
 # get only california
-ca = d_final[d_final$`Asset States` == "CA", ]
-unique(ca$`Asset Cities`)
+ca = d_final[d_final$Asset.States == "CA", ]
 
 # keep only first location for each deal
-ca$`Asset Cities` <- gsub(",.*", "", ca$`Asset Cities`)
+ca$Asset.Cities <- gsub(",.*", "", ca$Asset.Cities)
 
 # misc fix
-ca[ca$`Asset Cities` == "Palo Alta", "Asset Cities" ] <- "Palo Alto"
+ca[ca$Asset.Cities == "Palo Alta", "Asset.Cities" ] <- "Palo Alto"
 
 ####################################################
 
@@ -71,7 +72,6 @@ bls <- bls %>%
   separate_rows(Area, sep = "-{1,2}") %>%
   mutate(Area = trimws(Area))
 
-unique(bls$Area)
 bls <- bls[!is.na(bls$Area), ]
 
 bls$Date <- as.Date(paste(bls$Year, bls$Month, "01", sep="-"), format = "%Y-%m-%d")
@@ -103,7 +103,6 @@ z_home_value <- z_home_value %>%
 names(z_home_value) <- names(z_home_value) %>%
   sub("^X", "", .) %>%       # Remove leading 'X'
   gsub("\\.", "-", .) 
-head(z_home_value)
 date_columns <- setdiff(names(z_home_value), c("City", "CountyName"))
 date_columns_after_2010 <- date_columns[as.Date(date_columns) >= as.Date("2010-01-01")]
 z_home_value <- z_home_value %>%
@@ -136,6 +135,7 @@ acs <- do.call(rbind, lapply(csv_files, function(file) {
 
 # misc cleaning
 acs[1,552] <- "Year"
+
 colnames(acs) <- acs[1,]
 acs <- acs[!is.na(as.numeric(as.character(acs$`Estimate!!EMPLOYMENT STATUS!!Population 16 years and over`))), ]
 acs <- acs[, !duplicated(colnames(acs))]
@@ -286,49 +286,53 @@ df_geo <- df %>%
   geocode(address = Town, method = "osm", lat = latitude, long = longitude)
 
 # misc fix
-ca[ca$`Asset Cities` == "Mountainview", "Asset Cities"] <- "Mountain View"
+ca[ca$Asset.Cities == "Mountainview", "Asset Cities"] <- "Mountain View"
 
 
 # for deal data - find closest city in ACS data to join
 ca_geo <- ca %>%
-  distinct(`Asset Cities`) %>%
-  mutate(`Asset Cities` = paste(`Asset Cities`, "California", sep = ", ")) %>%
-  geocode(address = `Asset Cities`, method = "osm", lat = latitude, long = longitude)
+  distinct(Asset.Cities) %>%
+  mutate(Asset.Cities = paste(Asset.Cities, "California", sep = ", ")) %>%
+  geocode(address = Asset.Cities, method = "osm", lat = latitude, long = longitude)
 
 # calc distances between each Town in df and each Asset City in ca
-distance_results <- expand.grid(df_geo$Town, ca_geo$`Asset Cities`) %>%
-  rename(Town = Var1, `Asset Cities` = Var2) %>%
+distance_results <- expand.grid(df_geo$Town, ca_geo$Asset.Cities) %>%
+  rename(Town = Var1, Asset.Cities = Var2) %>%
   left_join(df_geo, by = "Town") %>%
-  left_join(ca_geo, by = c("Asset Cities" = "Asset Cities"), suffix = c("_df", "_ca")) %>%
+  left_join(ca_geo, by = c("Asset.Cities" = "Asset.Cities"), suffix = c("_df", "_ca")) %>%
   mutate(distance = distHaversine(cbind(longitude_df, latitude_df), cbind(longitude_ca, latitude_ca)))
 
 # filter by distance <= 100km 0 - get rid of remote deals
 nearest_matches <- distance_results %>%
-  group_by(`Asset Cities`) %>%
+  group_by(Asset.Cities) %>%
   slice_min(order_by = distance, n = 1) %>%
   ungroup() %>%
   filter(distance <= 100000) %>%
-  select(Town, `Asset Cities`, distance)
+  select(Town, Asset.Cities, distance)
 
 nearest_matches <- nearest_matches %>%
   mutate(
     Town = gsub(", California", "", Town),
-    `Asset Cities` = gsub(", California", "", `Asset Cities`)
+    Asset.Cities = gsub(", California", "", Asset.Cities)
   )
 
 # Add nearest matches to the ca dataset
 ca <- ca %>%
-  left_join(nearest_matches, by = "Asset Cities")
+  left_join(nearest_matches, by = "Asset.Cities")
 
 
 # Extract the Year-Month from the Date column in both ca and df
 df <- df %>%
   mutate(Year_Month = format(as.Date(Date), "%Y-%m"))
 
+
 ca <- ca %>%
-  mutate(Year_Month = format(as.Date(`Deal Date`), "%Y-%m"))
+  mutate(Year_Month = format(as.Date(Deal.Date), "%Y-%m"))
 ca <- ca %>%
-  filter(`Deal Date` >= "2010-01-01" & `Deal Date` <= "2024-01-01")
+  filter(Deal.Date >= "2010-01-01" & Deal.Date <= "2023-06-01")
+
+# for simplicity later, we're going to save predictor data here
+saveRDS(df, "Data_Predictor.rds")
 
 # Step 6: Merge ca and df on Town and Year_Month
 merged_data <- ca %>%
@@ -339,9 +343,10 @@ merged_data <- ca %>%
 ### CLEANING MERGED DATA FURTHER ####################################
 
 df <- merged_data
+
 df <- df %>%
   select(-c("Deal.Name", "Deal.Date", "Primary.Location", "Deal.Overview", 
-            "Asset.Regions", "Asset.Countries", "Asset.States", "Date", "X"))
+            "Asset.Regions", "Asset.Countries", "Asset.States", "Date"))
 df <- df %>%
   mutate(
     Town = gsub(", California", "", Town),
@@ -352,81 +357,80 @@ df <- df %>%
 # remove unnessary/redundant columns
 df <- df %>%
   select(-c(
-    Estimate.Population.16.years.and.over,
-    Estimate.In.labor.force,
-    Estimate.In.labor.force..Civilian.labor.force,
-    Estimate.In.labor.force.Employed,
-    Estimate.In.labor.force.Unemployed,
-    Estimate.In.labor.force..Armed.Forces,
-    Estimate.Not.in.labor.force,
-    Estimate.Civilian.labor.force,
-    Estimate.Females.16.years.and.over,
-    Estimate.All.parents.in.family.in.labor.force,
-    Estimate.Workers.16.years.and.over,
-    Estimate.Other.means,
-    Estimate.Civilian.employed.population.16.years.and.over,
-    Estimate.Civilian.employed.population.16.years.and.over.1,
-    Estimate.Civilian.employed.population.16.years.and.over.2,
-    Estimate.Total.households,
-    Estimate.Less.than..10.000,
-    Estimate..10.000.to..14.999,
-    Estimate..15.000.to..24.999,
-    Estimate..25.000.to..34.999,
-    Estimate..35.000.to..49.999,
-    Estimate..50.000.to..74.999,
-    Estimate..75.000.to..99.999,
-    Estimate..100.000.to..149.999,
-    Estimate..150.000.to..199.999,
-    Estimate..200.000.or.more,
-    Estimate.Mean.household.income..dollars.,
-    Estimate.With.earnings..Mean.earnings..dollars.,
-    Estimate.With.Social.Security..Mean.Social.Security.income..dollars.,
-    Estimate.With.retirement.income..Mean.retirement.income..dollars.,
-    Estimate.With.Supplemental.Security.Income..Mean.Supplemental.Security.Income..dollars.,
-    Estimate.With.cash.public.assistance.income..Mean.cash.public.assistance.income..dollars.,
-    Estimate.Families,
-    Estimate.Median.family.income..dollars.,
-    Estimate.Mean.family.income..dollars.,
-    Estimate.Per.capita.income..dollars.,
-    Estimate.Nonfamily.households,
-    Estimate.Median.nonfamily.income..dollars.,
-    Estimate.Mean.nonfamily.income..dollars.,
-    Estimate.Median.earnings.for.workers..dollars.,
-    Estimate.Median.earnings.for.male.full.time..year.round.workers..dollars.,
-    Estimate.Median.earnings.for.female.full.time..year.round.workers..dollars.,
-    Estimate.Civilian.noninstitutionalized.population,
-    Estimate.Civilian.noninstitutionalized.population.under.18.years,
-    Estimate.Civilian.noninstitutionalized.population.18.to.64.years,
-    Estimate.In.labor.force.1,
-    Estimate.In.labor.force..Employed,
-    Estimate.In.labor.force.With.health.insurance.coverage,
-    Estimate.In.labor.force.With.health.insurance.coverage..With.private.health.insurance,
-    Estimate.In.labor.force.With.health.insurance.coverage..With.public.coverage,
-    Estimate.In.labor.force.No.health.insurance.coverage,
-    Estimate.In.labor.force..Unemployed,
-    Estimate.In.labor.force.With.health.insurance.coverage.1,
-    Estimate.In.labor.force.With.health.insurance.coverage..With.private.health.insurance.1,
-    Estimate.In.labor.force.With.health.insurance.coverage..With.public.coverage.1,
-    Estimate.In.labor.force.No.health.insurance.coverage.1,
-    Estimate.Not.in.labor.force.1,
-    Estimate.Not.in.labor.force..With.health.insurance.coverage,
-    Estimate.Not.in.labor.force.With.private.health.insurance,
-    Estimate.Not.in.labor.force.With.public.coverage,
-    Estimate.Not.in.labor.force..No.health.insurance.coverage,
-    Estimate.All.families,
-    Estimate.All.families..With.related.children.under.18.years,
-    Estimate.All.families.With.related.children.under.5.years.only,
-    Estimate.Married.couple.families,
-    Estimate.Married.couple.families..With.related.children.under.18.years,
-    Estimate.Married.couple.families.With.related.children.under.5.years.only,
-    Estimate.Families.with.female.householder..no.husband.present,
-    Estimate.Families.with.female.householder..no.husband.present..With.related.children.under.18.years,
-    Estimate.Families.with.female.householder..no.husband.present.With.related.children.under.5.years.only,
-    Estimate.Under.18.years..Related.children.under.18.years,
-    Estimate.Under.18.years.Related.children.under.5.years,
-    Estimate.Under.18.years.Related.children.5.to.17.years
+    "Estimate Population 16 years and over",
+    "Estimate In labor force",
+    "Estimate In labor force!!Civilian labor force",
+    "Estimate In labor force Employed",
+    "Estimate In labor force Unemployed",
+    "Estimate In labor force!!Armed Forces",       
+    "Estimate Not in labor force",
+    "Estimate Civilian labor force",
+    "Estimate Females 16 years and over",
+    "Estimate All parents in family in labor force",
+    "Estimate Workers 16 years and over",
+    "Estimate Other means",
+    "Estimate Civilian employed population 16 years and over",
+    "Estimate Civilian employed population 16 years and over.1",
+    "Estimate Civilian employed population 16 years and over.2",
+    "Estimate Total households",
+    "Estimate Less than $10,000",                   
+    "Estimate $10,000 to $14,999",
+    "Estimate $15,000 to $24,999",
+    "Estimate $25,000 to $34,999",
+    "Estimate $35,000 to $49,999",
+    "Estimate $50,000 to $74,999",
+    "Estimate $75,000 to $99,999",
+    "Estimate $100,000 to $149,999",
+    "Estimate $150,000 to $199,999",
+    "Estimate $200,000 or more",
+    "Estimate Mean household income (dollars)",
+    "Estimate With earnings!!Mean earnings (dollars)", # Retained "!!" as it matches your colnames(df)
+    "Estimate With Social Security!!Mean Social Security income (dollars)",
+    "Estimate With retirement income!!Mean retirement income (dollars)",
+    "Estimate With Supplemental Security Income!!Mean Supplemental Security Income (dollars)",
+    "Estimate With cash public assistance income!!Mean cash public assistance income (dollars)",
+    "Estimate Families",
+    "Estimate Median family income (dollars)",
+    "Estimate Mean family income (dollars)",
+    "Estimate Per capita income (dollars)",
+    "Estimate Nonfamily households",
+    "Estimate Median nonfamily income (dollars)",
+    "Estimate Mean nonfamily income (dollars)",
+    "Estimate Median earnings for workers (dollars)",
+    "Estimate Median earnings for male full-time, year-round workers (dollars)",
+    "Estimate Median earnings for female full-time, year-round workers (dollars)",
+    "Estimate Civilian noninstitutionalized population",
+    "Estimate Civilian noninstitutionalized population under 18 years",
+    "Estimate Civilian noninstitutionalized population 18 to 64 years",
+    "Estimate In labor force.1",
+    "Estimate In labor force!!Employed",
+    "Estimate In labor force With health insurance coverage",
+    "Estimate In labor force With health insurance coverage!!With private health insurance",
+    "Estimate In labor force With health insurance coverage!!With public coverage",
+    "Estimate In labor force No health insurance coverage",
+    "Estimate In labor force!!Unemployed",
+    "Estimate In labor force With health insurance coverage.1",
+    "Estimate In labor force With health insurance coverage!!With private health insurance.1",
+    "Estimate In labor force With health insurance coverage!!With public coverage.1",
+    "Estimate In labor force No health insurance coverage.1",
+    "Estimate Not in labor force.1",
+    "Estimate Not in labor force!!With health insurance coverage",
+    "Estimate Not in labor force With private health insurance",
+    "Estimate Not in labor force With public coverage",
+    "Estimate Not in labor force!!No health insurance coverage",
+    "Estimate All families",
+    "Estimate All families!!With related children under 18 years",
+    "Estimate All families With related children under 5 years only",
+    "Estimate Married couple families",
+    "Estimate Married couple families!!With related children under 18 years",
+    "Estimate Married couple families With related children under 5 years only",
+    "Estimate Families with female householder, no husband present",
+    "Estimate Families with female householder, no husband present!!With related children under 18 years",
+    "Estimate Families with female householder, no husband present With related children under 5 years only",
+    "Estimate Under 18 years!!Related children under 18 years",
+    "Estimate Under 18 years Related children under 5 years",
+    "Estimate Under 18 years Related children 5 to 17 years"
   ))
-
 
 
 # for multiple asset portfolios, just keep the first building

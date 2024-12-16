@@ -28,7 +28,6 @@ town_coords <- unique_towns %>%
   geocode(address = full_address, method = "osm") %>%
   rename(lat.census.town = lat, lon.census.town = long)
 
-# Merge geocoded coordinates back into the main dataframe
 d <- d %>%
   left_join(town_coords, by = "Town")
 
@@ -795,9 +794,6 @@ linpred_mean <- best_result$summary.linear.predictor$mean[index_est_for_mesh] # 
 my.levelplot(proj, linpred_mean, main = "Projected Mean Linear Predictor")
 
 ```
-
-
-
 # Predicting Future Deal Volume
 
 Date frame ended at June 2023, lets create a period for July 2023-Jan 2024
@@ -817,7 +813,7 @@ d_modeling$Period <- as.Date(d_modeling$Period)
 # Step 3: Process Home Value data
 home_value_2024 <- read.csv("z_home_value_unique.csv") %>%
   mutate(Date = as.Date(Date)) %>%
-  filter(Date > as.Date("2023-06-06") & Date < as.Date("2024-01-01")) %>%
+  filter(Date > as.Date("2023-06-01") & Date < as.Date("2024-01-01")) %>%
   group_by(City) %>%
   summarize(HomeValue = mean(HomeValue, na.rm = TRUE)) %>%
   filter(City %in% unique(d_modeling_future$Town)) %>%
@@ -833,7 +829,7 @@ d_modeling_future <- d_modeling_future %>%
 # Step 4: Process Federal Rate data
 fed_2024 <- read.csv("fed_cleaned.csv") %>%
   mutate(Date = as.Date(Date)) %>%
-  filter(Date > as.Date("2023-06-06") & Date < as.Date("2024-01-01")) %>%
+  filter(Date > as.Date("2023-06-01") & Date < as.Date("2024-01-01")) %>%
   summarize(Fed_Rate = mean(Rate, na.rm = TRUE)) %>%
   mutate(Fed_Rate_scaled = scale(Fed_Rate, center = mean(d_modeling$Fed_Rate, na.rm = TRUE),
                                  scale = sd(d_modeling$Fed_Rate, na.rm = TRUE))) %>%
