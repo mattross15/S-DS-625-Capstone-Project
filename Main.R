@@ -18,6 +18,7 @@ library(geosphere)
 library(glmnet)
 library(treemapify)
 library(ggplot2)
+library(ggrepel)
 library(car)
 library(sf)
 library(ggmap)
@@ -34,6 +35,7 @@ if (!requireNamespace("INLA", quietly = TRUE)) {
 } else {
   library(INLA)
 }
+library(ggrepel)
 ###### to install INLA, uncomment and run the following code:
 # opt <- options()
 # options(pkgType="both")
@@ -43,4 +45,9 @@ if (!requireNamespace("INLA", quietly = TRUE)) {
 ###### set Google Maps API Key, uncomment and run:
 # options(tidygeocoder.google_api_key = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
 # Sys.setenv(GOOGLEGEOCODE_API_KEY = "AIzaSyB13Mx7EXxARNCoYEH2ICJ40WdQbfcl7QI")
+
+
+source("PrepData.R")
+source("Analysis.R")
+
 

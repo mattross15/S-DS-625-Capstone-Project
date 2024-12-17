@@ -16,6 +16,7 @@ library(zoo)
 library(geosphere)
 library(glmnet)
 library(treemapify)
+library(ggrepel)
 
 # INLA not available in CRAN
 # see https://www.r-inla.org/download-install 
@@ -41,16 +42,72 @@ library(lattice)
 
 df <- readRDS("Data.rds")
 
+## Overall Deal Volume ##
+
+deal_volume_over_year <- df %>%
+  group_by(Year) %>%
+  summarize(Deal_Volume = n(), .groups = "drop")
+
+# Plot Histogram of Overall Deal Volume Over Time (Figure 29)
+fig29 <- ggplot(deal_volume_over_year, aes(x = factor(Year), y = Deal_Volume)) +
+  geom_col(fill = "#2C7FB8") +
+  labs(
+    title = "Overall Deal Volume Over Time",
+    x = "Year",
+    y = "Number of Deals"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+# Save Figure 29
+ggsave(filename = "figures/fig37.png", plot = fig29, width = 12, height = 6, dpi = 300)
+
+# Identify Top 10 Cities by Total Deal Volume
+top_10_cities <- df %>%
+  filter(!is.na(Town)) %>%
+  group_by(Town) %>%
+  summarize(Total_Deal_Volume = n(), .groups = "drop") %>%
+  arrange(desc(Total_Deal_Volume)) %>%
+  slice_head(n = 10) %>%
+  pull(Town)
+
+# Filter data for Top 10 Cities and Aggregate Deal Volume Over Year
+deal_volume_top_cities <- df %>%
+  filter(Town %in% top_10_cities) %>%
+  group_by(Year, Town) %>%
+  summarize(Deal_Volume = n(), .groups = "drop")
+
+# Plot Faceted Histogram of Deal Volume Over Time for Top 10 Cities (Figure 30)
+fig30 <- ggplot(deal_volume_top_cities, aes(x = factor(Year), y = Deal_Volume)) +
+  geom_col(fill = "#2C7FB8") +
+  labs(
+    title = "Deal Volume Over Time Across Top 10 Cities",
+    x = "Year",
+    y = "Number of Deals"
+  ) +
+  facet_wrap(~ Town, ncol = 2) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    strip.text = element_text(face = "bold")
+  )
+
+# Save Figure 30
+ggsave(filename = "figures/fig38.png", plot = fig30, width = 14, height = 10, dpi = 300)
+
+
 ## Treemap Plot of Asset Class ###
 
 
 df_treemap <- df %>%
   filter(!is.na(Primary.Asset.Type)) %>%
-  group_by(Town, Primary.Asset.Type) %>%
+  group_by(Primary.Asset.Type) %>%
   summarize(Deal_Volume = n(), .groups = "drop")
 
 ggplot(df_treemap, aes(area = Deal_Volume, fill = Primary.Asset.Type,
-                       label = paste(Town, "\n", Primary.Asset.Type))) +
+                       label = paste(Primary.Asset.Type))) +
   geom_treemap() +
   geom_treemap_text(colour = "white", place = "centre", size = 8) +
   scale_fill_viridis_d() +
@@ -1047,6 +1104,43 @@ ggplot(data.frame(Observed = y, Fitted = fitted_values), aes(x = Observed, y = F
   theme_minimal()
 ggsave(filename = "figures/fig13.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
+### zero inflated ###
+zero_inflated <- inla(
+  formula,
+  data = inla.stack.data(stack),
+  family = "zeroinflatedpoisson0",
+  control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+  control.compute = list(dic = TRUE, waic = TRUE)
+)
+
+summary(zero_inflated)
+
+zero_inflated <- inla(
+  formula,
+  data = inla.stack.data(stack),
+  family = "zeroinflatedpoisson0",
+  control.predictor = list(A = inla.stack.A(stack), compute = TRUE),
+  control.compute = list(dic = TRUE, waic = TRUE)
+)
+inla.doc("negativebinomial")
+summary(zero_inflated)
+
+### neg bin ###
+prediction_result_nb <- inla(
+  formula,
+  data = inla.stack.data(stack),
+  family = "nbinomial2",  
+  control.predictor = list(
+    A = inla.stack.A(stack), 
+    compute = TRUE, 
+    link = 1  # Log-link function
+  ),
+  control.compute = list(
+    dic = TRUE, 
+    waic = TRUE  
+  )
+)
+summary(prediction_result_nb)
 #### Some Visualizations ###################################################
 
 ### Latent Space Mean and Variance ####
@@ -1116,39 +1210,43 @@ ggsave(filename = "figures/fig15.png", plot = last_plot(), width = 10, height = 
 # Visualize Posterior distribution across townships
 str(best_result)
 fixed_names <- best_set
+
+
 for (fn in fixed_names) {
+  # Open a PNG device
+  png(filename = sprintf("figures/fig%d.png", 16 + which(fixed_names == fn)), 
+      width = 10, height = 6, units = "in", res = 300)
+  
+  # Generate the Base R plot
   marginal <- best_result$marginals.fixed[[fn]]
   plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
        xlab = fn, ylab = "Density")
-  abline(v = inla.emarginal(function(x) x, marginal), col = "red") # mean
-}
-for (fn in fixed_names) {
-  marginal <- best_result$marginals.fixed[[fn]]
-  plot(marginal, type = "l", main = paste("Posterior Marginal of", fn),
-       xlab = fn, ylab = "Density")
-  abline(v = inla.emarginal(function(x) x, marginal), col = "red") # mean
-  ggsave(filename = sprintf("figures/fig%d.png", 16 + which(fixed_names == fn)), width = 10, height = 6, dpi = 300)
+  abline(v = inla.emarginal(function(x) x, marginal), col = "red") # Add mean line
+  
+  # Close the PNG device
+  dev.off()
 }
 
 # visualize temporal dependence
 best_result$summary.hyperpar
-
+png(filename = "figures/fig31.png", width = 10, height = 6, units = "in", res = 300)
 rho_marginal <- best_result$marginals.hyperpar[["Rho for Period"]]
 plot(rho_marginal, type = "l", main = "Posterior of AR1 Rho", xlab = "Rho", ylab = "Density")
 abline(v = inla.emarginal(function(x) x, rho_marginal), col = "red") # Posterior mean
-ggsave(filename = "figures/fig23.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+dev.off()
 
 # visualize spatial range
 range_marginal <- best_result$marginals.hyperpar[["Range for spatial.field"]]
 
 # Plot the posterior distribution
+png(filename = "figures/fig32.png", width = 10, height = 6, units = "in", res = 300)
 plot(range_marginal, type = "l",
      main = "Posterior Distribution of Spatial Range",
      xlab = "Spatial Range (in units of mesh projection, e.g., meters)",
      ylab = "Density")
 abline(v = inla.emarginal(function(x) x, range_marginal), col = "red", lty = 2, lwd = 2)
 legend("topright", legend = "Posterior Mean", col = "red", lty = 2, bty = "n")
-ggsave(filename = "figures/fig24.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+dev.off()
 
 period_numeric <- d_modeling$Period_numeric
 index_est <- inla.stack.index(stack, tag = "data")$data
@@ -1168,7 +1266,7 @@ ggplot(period_summary, aes(x = period_numeric, y = Fitted)) +
        x = "Time (Period Numeric)",
        y = "Fitted Deal Volume") +
   theme_minimal()
-ggsave(filename = "figures/fig25.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+ggsave(filename = "figures/fig33.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
 
 
 ###########################################################################
@@ -1583,7 +1681,7 @@ predicted_means_plot <- ggplot(comparison_data_ordered, aes(x = Predicted_Mean, 
 
 # Display the Predicted Means Plot
 print(predicted_means_plot)
-ggsave(filename = "figures/fig26.png", plot = predicted_means_plot, width = 10, height = 6, dpi = 300)
+ggsave(filename = "figures/fig34.png", plot = predicted_means_plot, width = 10, height = 6, dpi = 300)
 
 
 bar_chart_data <- comparison_data_positive %>%
@@ -1610,7 +1708,7 @@ bar_chart <- ggplot(bar_chart_data, aes(x = reorder(Town, -Deal_Count), y = Deal
   )
 
 print(bar_chart)
-ggsave(filename = "figures/fig27.png", plot = bar_chart, width = 10, height = 6, dpi = 300)
+ggsave(filename = "figures/fig35.png", plot = bar_chart, width = 10, height = 6, dpi = 300)
 
 
 comparison_data_map <- comparison_data_positive %>%
@@ -1662,4 +1760,4 @@ map_plot <- ggplot() +
 
 # Display the Updated Map Plot
 print(map_plot)
-ggsave(filename = "figures/fig28.png", plot = map_plot, width = 10, height = 6, dpi = 300)
+ggsave(filename = "figures/fig36.png", plot = map_plot, width = 10, height = 6, dpi = 300)
