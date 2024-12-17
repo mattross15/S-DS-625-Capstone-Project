@@ -1,5 +1,5 @@
 ---
-title: "A Spatio-Temporal Model for Real Estate Investment Activity"
+title: "Spatio-Temporal Modeling of California Real Estate Investment Activity - Executive Summary"
 author: "Matthew Ross"
 date: "12/16/2024"
 output:
@@ -7,23 +7,33 @@ output:
   word_document: default
 urlcolor: blue
 header-includes:
+  - \usepackage{titlesec}     # Allows custom title formatting
+  - \usepackage{titling}      # Adjusts spacing before and after title/author/date
   - \usepackage{amssymb}
-  - \usepackage{float}       # Allows precise figure placement
+  - \usepackage{float}
   - \usepackage{subcaption}
+  - \setlength{\droptitle}{-1em} % Reduces spacing before the title
+  - \titleformat{\title}{\normalfont\LARGE\bfseries}{}{0pt}{}
+  - \setlength{\parskip}{0em} % Removes paragraph spacing
+  - \setlength{\parindent}{0em} % Removes indentation
+  - \titlespacing*{\author}{0pt}{-0.5em}{-0.5em} % Adjust spacing above/below author
+  - \titlespacing*{\date}{0pt}{-0.5em}{-0.5em}   % Adjust spacing above/below date
+  - \setlength{\parindent}{1.5em}
 ---
+
 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-Opportunistic real estate investors seek out markets that present favorable conditions for achieving high returns on their investment. To identify these markets, an investor must look for property specific factors, like its price and condition, and future cash flows, a rather costly and time consuming. However, before this can even be done, an investor must identify opportunistic markets by broader characteristics, such as the economic health and demographic of a region, in order to find areas where market dislocations will eventually correct. This project focuses on finding the broader market drivers behind real estate investment activity in California over the past 15 years.
+  Opportunistic real estate investors seek out markets where the current market value of properties is less then their intrinsic value, and profit from an eventual market correction over time. To identify these markets, an investor must look for property specific factors, like its price and condition, a rather costly and time consuming process. However, to assess whether a market is actually undervalued or simply a poor market, an investor must identify broader characteristics, such as the economic health and demographic of a region, in order to find areas where market dislocations will eventually correct. This project focuses on finding these kinds of broader market drivers behind overall real estate investment activity in California over the past 15 years.
 
-This project makes use of historical real estate deal data from Preqin, combined with economic and demographic variables from the Bureau of Economic Analysis, U.S Census Bureau, IRS, Zillow, and the Federal Reserve. The project employs a statistical model that identifies the most important variables that drive deal volume over towns in California, while also capturing the spillover effect between neighborhoods, and how market momentum drives investor action.
+  This project makes use of historical real estate deal data from Preqin, combined with economic and demographic variables from the Bureau of Economic Analysis, U.S Census Bureau, IRS, Zillow, and the Federal Reserve. The project employs a statistical model that identifies the most important variables that drive deal volume over towns in California, while also capturing the spillover effect between neighborhoods, and how market momentum drives investor action.
 
-Key findings from the project suggest the strongest drivers of investor activity in a town are macroeconomic, such as regional unemployment rates, and federal interest rates, which have negative effects on deal activity when they rise. However, several socioeconomic factors have significant negative and positive effects on deal activity. Variables like a town's population on welfare benefits, overall home value, and tax deductions for investment ("Opportunity Zones") contribute to deal activity. The project also finds that the spillover effect between towns is significant for towns near each other, particularly within 20km. 
+  Key findings from the project suggest the strongest drivers of overall investor activity in a town are macroeconomic, such as regional unemployment rates, and federal interest rates, which have negative effects on deal activity when they rise. However, several socioeconomic factors have significant negative and positive effects on deal activity. Variables like a town's population on welfare benefits, overall home value, and tax deductions for investment ("Opportunity Zones") contribute to deal activity. The project also finds that the spillover effect between towns is significant for towns near each other, particularly within 20km.
 
-Key finds can be visualized in the following:
+  Overall, while it is difficult to make conclusions about positive and negative drivers opportunistic investors specifically, the report still identifies what factors are important for all types of investors in the market.
 
 &nbsp;  
 &nbsp;  
@@ -33,7 +43,7 @@ Key finds can be visualized in the following:
 library(ggplot2)
 library(dplyr)
 
-# Data: Strongest Predictors (Top Positive and Negative Effects)
+# Data: Strongest Predictors of Overall (Top Positive and Negative Effects)
 fixed_effects <- data.frame(
   Predictor = c(
     "Federal Funds Rate", 
@@ -66,13 +76,13 @@ p <- ggplot(fixed_effects, aes(x = Predictor, y = Effect, fill = Effect > 0)) +
   coord_flip() +
   theme_minimal() +
   labs(
-    title = "Strongest Predictors of Real Estate Deal Volume",
+    title = "Strongest Predictors of Deal Volume in California",
     subtitle = "Positive effects (green) drive deal volume; negative effects decrease deal volume",
     x = NULL,
     y = NULL
   ) +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 14), # Adjust title size
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 13), # Adjust title size
     plot.subtitle = element_text(hjust = 0.5, size = 8),             # Decrease subtitle size
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),

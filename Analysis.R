@@ -1023,8 +1023,9 @@ mesh <- inla.mesh.2d(
   cutoff = 5000
 )
 
+png(filename = "figures/fig12.png", width = 10, height = 6, units = "in", res = 300)
 plot(mesh)
-ggsave(filename = "figures/fig12.png", plot = last_plot(), width = 12, height = 8, dpi = 300)
+dev.off()
 
 # Create SPDE model
 spde <- inla.spde2.pcmatern(

@@ -36,6 +36,7 @@ if (!requireNamespace("INLA", quietly = TRUE)) {
   library(INLA)
 }
 library(ggrepel)
+
 ###### to install INLA, uncomment and run the following code:
 # opt <- options()
 # options(pkgType="both")
