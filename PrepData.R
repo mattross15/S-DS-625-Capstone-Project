@@ -321,7 +321,7 @@ nearest_matches <- nearest_matches %>%
   )
 
 # again, we'll use this later
-write.csv(nearest_matches, "Cleaneddate/nearest_matches_deal.csv")
+write.csv(nearest_matches, "Cleaneddata/nearest_matches_deal.csv")
 
 # Add nearest matches to the ca dataset
 ca <- ca %>%
